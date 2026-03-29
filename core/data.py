@@ -1,5 +1,4 @@
 import os
-import io
 import uuid
 import time
 import pandas as pd
@@ -20,17 +19,25 @@ SCHEMAS = {
 }
 
 
+def _get_user_dir():
+    user = st.session_state.get("current_user", "default")
+    user_dir = os.path.join(DATA_DIR, user)
+    os.makedirs(user_dir, exist_ok=True)
+    return user_dir
+
+
 def _empty_df(name):
     schema = SCHEMAS[name]
     return pd.DataFrame({col: pd.Series(dtype=dtype) for col, dtype in schema.items()})
 
 
 def _parquet_path(name):
-    return os.path.join(DATA_DIR, f"{name}.parquet")
+    return os.path.join(_get_user_dir(), f"{name}.parquet")
 
 
 def load_df(name):
-    key = f"df_{name}"
+    user = st.session_state.get("current_user", "default")
+    key = f"df_{user}_{name}"
     if key in st.session_state:
         return st.session_state[key]
     path = _parquet_path(name)
@@ -47,9 +54,10 @@ def load_df(name):
 
 
 def save_df(name, df):
-    key = f"df_{name}"
+    user = st.session_state.get("current_user", "default")
+    key = f"df_{user}_{name}"
     st.session_state[key] = df
-    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(_get_user_dir(), exist_ok=True)
     df.to_parquet(_parquet_path(name), index=False)
     # Debounce: only push to GitHub every 30 seconds
     last_push = st.session_state.get("_last_github_push", 0)
@@ -70,15 +78,16 @@ def _push_to_github(name):
         from github import Github
         g = Github(token)
         repo = g.get_repo(repo_name)
-        path_in_repo = f"data/{name}.parquet"
+        user = st.session_state.get("current_user", "default")
+        path_in_repo = f"data/{user}/{name}.parquet"
         local_path = _parquet_path(name)
         with open(local_path, "rb") as f:
             content = f.read()
         try:
             existing = repo.get_contents(path_in_repo)
-            repo.update_file(path_in_repo, f"Update {name} data", content, existing.sha)
+            repo.update_file(path_in_repo, f"Update {user}/{name}", content, existing.sha)
         except Exception:
-            repo.create_file(path_in_repo, f"Create {name} data", content)
+            repo.create_file(path_in_repo, f"Create {user}/{name}", content)
     except Exception:
         pass
 

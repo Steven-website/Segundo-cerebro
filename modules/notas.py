@@ -84,6 +84,24 @@ def render():
                 st.session_state["nota_edit_id"] = None
                 st.rerun()
 
+    # --- Markdown reader view ---
+    viewing_id = st.session_state.get("nota_viewing")
+    if viewing_id and not notas.empty:
+        matches = notas[notas["id"] == viewing_id]
+        if not matches.empty:
+            nota_view = matches.iloc[0]
+            with st.container(border=True):
+                st.markdown(f"## {nota_view['titulo']}")
+                st.caption(f"{AREA_LABELS.get(nota_view['area'], nota_view['area'])}")
+                if nota_view.get("tags"):
+                    st.caption(f"\U0001f3f7\ufe0f {nota_view['tags']}")
+                st.divider()
+                st.markdown(nota_view.get("body", ""))
+                if st.button("Cerrar vista"):
+                    st.session_state["nota_viewing"] = None
+                    st.rerun()
+            st.divider()
+
     # --- Display notes grid ---
     if filtered.empty:
         st.info("No hay notas. Crea tu primera nota con el boton '+ Nota'.")
@@ -103,7 +121,11 @@ def render():
                 if nota.get("tags"):
                     st.caption(f"\U0001f3f7\ufe0f {nota['tags']}")
 
-                col_e, col_d = st.columns(2)
+                col_v, col_e, col_d = st.columns(3)
+                with col_v:
+                    if st.button("\U0001f4d6", key=f"view_{nota['id']}", use_container_width=True):
+                        st.session_state["nota_viewing"] = nota["id"]
+                        st.rerun()
                 with col_e:
                     if st.button("\u270f\ufe0f", key=f"edit_{nota['id']}", use_container_width=True):
                         st.session_state["nota_editing"] = True

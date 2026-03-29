@@ -11,6 +11,11 @@ def render():
     tareas = get_df("tareas")
     proyectos = get_df("proyectos")
 
+    # --- View toggle ---
+    col_view, col_spacer = st.columns([2, 4])
+    with col_view:
+        view_mode = st.radio("Vista", ["Lista", "Kanban"], horizontal=True, key="tareas_view", label_visibility="collapsed")
+
     # --- Toolbar ---
     col_filter, col_area, col_export, col_add = st.columns([2, 2, 1, 1])
     with col_filter:
@@ -109,6 +114,10 @@ def render():
         st.info("No hay tareas. Crea una con '+ Tarea'.")
         return
 
+    if view_mode == "Kanban":
+        _render_kanban(filtered, tareas)
+        return
+
     for _, t in filtered.iterrows():
         pri_emoji = PRIORITY_EMOJIS.get(t["prioridad"], "\u26aa")
         area_label = AREA_LABELS.get(t["area"], t["area"])
@@ -134,3 +143,57 @@ def render():
                 tareas = tareas[tareas["id"] != t["id"]]
                 save_df("tareas", tareas)
                 st.rerun()
+
+
+def _render_kanban(filtered, tareas):
+    col_alta, col_media, col_baja, col_done = st.columns(4)
+
+    with col_alta:
+        st.markdown("### \U0001f534 Alta")
+        alta = filtered[(~filtered["done"]) & (filtered["prioridad"] == "alta")]
+        for _, t in alta.iterrows():
+            with st.container(border=True):
+                st.markdown(f"**{t['titulo']}**")
+                st.caption(AREA_LABELS.get(t["area"], t["area"]))
+                if t.get("fecha"):
+                    st.caption(f"\U0001f4c5 {t['fecha']}")
+                if st.checkbox("Hecho", key=f"kb_done_{t['id']}"):
+                    tareas.loc[tareas["id"] == t["id"], "done"] = True
+                    save_df("tareas", tareas)
+                    st.rerun()
+
+    with col_media:
+        st.markdown("### \U0001f7e1 Media")
+        media = filtered[(~filtered["done"]) & (filtered["prioridad"] == "media")]
+        for _, t in media.iterrows():
+            with st.container(border=True):
+                st.markdown(f"**{t['titulo']}**")
+                st.caption(AREA_LABELS.get(t["area"], t["area"]))
+                if t.get("fecha"):
+                    st.caption(f"\U0001f4c5 {t['fecha']}")
+                if st.checkbox("Hecho", key=f"kb_done_{t['id']}"):
+                    tareas.loc[tareas["id"] == t["id"], "done"] = True
+                    save_df("tareas", tareas)
+                    st.rerun()
+
+    with col_baja:
+        st.markdown("### \U0001f7e2 Baja")
+        baja = filtered[(~filtered["done"]) & (filtered["prioridad"] == "baja")]
+        for _, t in baja.iterrows():
+            with st.container(border=True):
+                st.markdown(f"**{t['titulo']}**")
+                st.caption(AREA_LABELS.get(t["area"], t["area"]))
+                if t.get("fecha"):
+                    st.caption(f"\U0001f4c5 {t['fecha']}")
+                if st.checkbox("Hecho", key=f"kb_done_{t['id']}"):
+                    tareas.loc[tareas["id"] == t["id"], "done"] = True
+                    save_df("tareas", tareas)
+                    st.rerun()
+
+    with col_done:
+        st.markdown("### \u2705 Hechas")
+        done = filtered[filtered["done"]]
+        for _, t in done.iterrows():
+            with st.container(border=True):
+                st.markdown(f"~~{t['titulo']}~~")
+                st.caption(AREA_LABELS.get(t["area"], t["area"]))
