@@ -1,4 +1,4 @@
-# 🧠 Segundo Cerebro v3
+# 🧠 Segundo Cerebro
 
 Sistema PKM (Personal Knowledge Management) personal, multi-usuario, que corre completamente en el navegador — sin servidor, sin base de datos, sin dependencias externas.
 
