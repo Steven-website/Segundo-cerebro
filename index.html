@@ -584,24 +584,24 @@ body{
 
     <div class="nav-group">
       <div class="nav-group-label">General</div>
-      <div class="nav-item active" onclick="nav('dashboard')"><span class="ni">◈</span>Dashboard</div>
-      <div class="nav-item" onclick="nav('notas')"><span class="ni">◻</span>Notas<span class="nav-badge" id="b-notas">0</span></div>
-      <div class="nav-item" onclick="nav('tareas')"><span class="ni">◷</span>Tareas<span class="nav-badge" id="b-tareas">0</span></div>
-      <div class="nav-item" onclick="nav('proyectos')"><span class="ni">◈</span>Proyectos<span class="nav-badge" id="b-proyectos">0</span></div>
+      <div class="nav-item active" data-view="dashboard" onclick="nav('dashboard')"><span class="ni">◈</span>Dashboard</div>
+      <div class="nav-item" data-view="notas" onclick="nav('notas')"><span class="ni">◻</span>Notas<span class="nav-badge" id="b-notas">0</span></div>
+      <div class="nav-item" data-view="tareas" onclick="nav('tareas')"><span class="ni">◷</span>Tareas<span class="nav-badge" id="b-tareas">0</span></div>
+      <div class="nav-item" data-view="proyectos" onclick="nav('proyectos')"><span class="ni">◈</span>Proyectos<span class="nav-badge" id="b-proyectos">0</span></div>
     </div>
     <div class="nav-group">
       <div class="nav-group-label">Finanzas</div>
-      <div class="nav-item" onclick="nav('finanzas')"><span class="ni">₡</span>Finanzas</div>
-      <div class="nav-item" onclick="nav('ahorros')"><span class="ni">◎</span>Ahorros & Deudas</div>
+      <div class="nav-item" data-view="finanzas" onclick="nav('finanzas')"><span class="ni">₡</span>Finanzas</div>
+      <div class="nav-item" data-view="ahorros" onclick="nav('ahorros')"><span class="ni">◎</span>Ahorros & Deudas</div>
     </div>
     <div class="nav-group">
       <div class="nav-group-label">Vida</div>
-      <div class="nav-item" onclick="nav('habitos')"><span class="ni">◉</span>Hábitos<span class="nav-badge" id="b-habitos">0</span></div>
-      <div class="nav-item" onclick="nav('inventario')"><span class="ni">▣</span>Inventario<span class="nav-badge" id="b-inv">0</span></div>
+      <div class="nav-item" data-view="habitos" onclick="nav('habitos')"><span class="ni">◉</span>Hábitos<span class="nav-badge" id="b-habitos">0</span></div>
+      <div class="nav-item" data-view="inventario" onclick="nav('inventario')"><span class="ni">▣</span>Inventario<span class="nav-badge" id="b-inv">0</span></div>
     </div>
     <div class="nav-group">
       <div class="nav-group-label">IA</div>
-      <div class="nav-item" onclick="nav('ia')"><span class="ni">◎</span>Buscar con IA</div>
+      <div class="nav-item" data-view="ia" onclick="nav('ia')"><span class="ni">◎</span>Buscar con IA</div>
     </div>
 
     <div class="sidebar-bottom">
@@ -703,6 +703,14 @@ body{
         <div class="sh"><div><div class="sh-title">Buscar con IA</div><div class="sh-sub">Consulta todo tu conocimiento</div></div></div>
         <div class="ai-box">
           <div class="ai-lbl"><div class="ai-pulse"></div>Asistente de conocimiento</div>
+          <div style="margin-bottom:10px;">
+            <label style="font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--t3);display:block;margin-bottom:4px;">API Key de Anthropic</label>
+            <div style="display:flex;gap:8px;">
+              <input class="ai-inp" id="ai-key" type="password" placeholder="sk-ant-..." style="font-size:11px;" value="">
+              <button class="btn" onclick="saveAIKey()" style="white-space:nowrap;">Guardar</button>
+            </div>
+            <div style="font-size:9px;color:var(--t3);margin-top:4px;">Tu key se guarda localmente. Obtén una en console.anthropic.com</div>
+          </div>
           <div class="ai-row">
             <input class="ai-inp" id="ai-q" placeholder="Pregunta sobre tus notas, finanzas, hábitos, inventario..." onkeydown="if(event.key==='Enter')runAI()">
             <button class="btn btn-gold" onclick="runAI()" id="ai-btn">Preguntar</button>
@@ -1165,6 +1173,8 @@ function fillSelects() {
   ['n-area','t-area','p-area','q-area'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.innerHTML=opts;
   });
+  const projSel=document.getElementById('t-proj');
+  if(projSel) projSel.innerHTML='<option value="">Sin proyecto</option>'+proyectos.map(p=>`<option value="${p.id}">${p.nombre}</option>`).join('');
   buildBudgetForm();
 }
 
@@ -1181,8 +1191,7 @@ function nav(view) {
   document.getElementById('tb-title').textContent=titles[view]||view;
 
   document.querySelectorAll('.nav-item').forEach(n=>{
-    const t=n.textContent.trim().toLowerCase();
-    if(t.startsWith(view)||(view==='ia'&&t.includes('buscar'))) n.classList.add('active');
+    if(n.dataset.view===view) n.classList.add('active');
   });
 
   const acts=document.getElementById('tb-actions');
@@ -1207,7 +1216,7 @@ function nav(view) {
     case 'inventario':
       acts.innerHTML=`<input class="search-inp" id="s-inv" placeholder="Buscar..." oninput="renderInv()"><button class="btn btn-gold" onclick="openM('m-inv');clearF(['iv-name','iv-emoji','iv-val','iv-qty','iv-loc','iv-date','iv-notes']);document.getElementById('iv-qty').value=1">+ Artículo</button>`;
       renderInv(); break;
-    case 'ia': renderAISuggs(); break;
+    case 'ia': loadAIKey(); renderAISuggs(); break;
     default: renderDashboard();
   }
 }
@@ -1249,7 +1258,7 @@ function renderDashboard() {
     const done=isHabDoneToday(h);
     return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--b1);">
       <div class="tcheck ${done?'on':''}" onclick="toggleHabToday('${h.id}')">${done?'✓':''}</div>
-      <div style="font-size:12px;color:var(--${done?'t3':'t2}'">${h.emoji||'⭐'} ${h.name}</div>
+      <div style="font-size:12px;color:var(--${done?'t3':'t2'})">${h.emoji||'⭐'} ${h.name}</div>
     </div>`;
   }).join(''):`<div style="color:var(--t3);font-size:11px;">No hay hábitos configurados.</div>`;
 
@@ -1589,13 +1598,27 @@ function renderAISuggs(){
     'Dame un resumen de mi situación financiera',
   ].map(s=>`<button class="btn" style="text-align:left;padding:8px 12px;font-size:11px;" onclick="document.getElementById('ai-q').value='${s}';runAI()">${s}</button>`).join('');
 }
+function saveAIKey(){
+  const key=document.getElementById('ai-key').value.trim();
+  if(!key){notify('Ingresa una API key');return;}
+  localStorage.setItem('scb3_ai_key',key);
+  notify('API key guardada');
+}
+function loadAIKey(){
+  const key=localStorage.getItem('scb3_ai_key')||'';
+  const el=document.getElementById('ai-key');
+  if(el) el.value=key;
+}
 async function runAI(){
   const q=document.getElementById('ai-q').value.trim();if(!q)return;
+  const apiKey=localStorage.getItem('scb3_ai_key')||'';
+  if(!apiKey){notify('Configura tu API key primero');return;}
   const btn=document.getElementById('ai-btn'),res=document.getElementById('ai-result'),txt=document.getElementById('ai-rtxt');
   btn.innerHTML='<span class="spin"></span>';btn.disabled=true;
   res.classList.add('on');txt.innerHTML='<span style="color:var(--t3)">Analizando tu cerebro...</span>';
   try{
-    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,system:`Eres "Cerebro", asistente PKM personal. Responde en español, de forma concisa. Usuario actual: ${CU}. Datos:\n\n${buildCtx()}`,messages:[{role:'user',content:q}]})});
+    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,system:`Eres "Cerebro", asistente PKM personal. Responde en español, de forma concisa. Usuario actual: ${CU}. Datos:\n\n${buildCtx()}`,messages:[{role:'user',content:q}]})});
+    if(!r.ok){const err=await r.json().catch(()=>({}));txt.innerHTML=`<span style="color:var(--rose)">Error ${r.status}: ${err.error?.message||'Verifica tu API key'}</span>`;btn.innerHTML='Preguntar';btn.disabled=false;return;}
     const d=await r.json();
     txt.innerHTML=(d.content?.map(c=>c.text||'').join('')||'Sin respuesta').replace(/\n/g,'<br>');
   }catch(e){txt.innerHTML='<span style="color:var(--rose)">Error de conexión.</span>';}
@@ -1635,7 +1658,7 @@ function saveQuick(){
   if(quickType==='tarea'){tareas.unshift({id:uid(),titulo:tit,area,prioridad:'media',done:false,ts:Date.now()});usave('tareas',tareas);}
   else if(quickType==='gasto'){const amt=parseFloat(document.getElementById('q-amt').value)||0;txs.unshift({id:uid(),type:'gasto',desc:tit,amt,cat:'otro',fecha:today(),ts:Date.now()});usave('txs',txs);}
   else{notas.unshift({id:uid(),titulo:tit,area,tags:quickType==='idea'?'idea':'',body:document.getElementById('q-body').value,ts:Date.now()});usave('notas',notas);}
-  closeM('m-quick');clearF(['q-tit','q-body','q-amt']);updateBadges();renderDashboard();notify('¡Guardado ⚡!');
+  closeM('m-quick');clearF(['q-tit','q-body','q-amt']);updateBadges();nav(curView);notify('¡Guardado ⚡!');
 }
 
 // ═══════════════════════════════════════════════════════
