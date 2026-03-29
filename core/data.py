@@ -51,7 +51,11 @@ def save_df(name, df):
     st.session_state[key] = df
     os.makedirs(DATA_DIR, exist_ok=True)
     df.to_parquet(_parquet_path(name), index=False)
-    _push_to_github(name)
+    # Debounce: only push to GitHub every 30 seconds
+    last_push = st.session_state.get("_last_github_push", 0)
+    if time.time() - last_push > 30:
+        _push_to_github(name)
+        st.session_state["_last_github_push"] = time.time()
 
 
 def _push_to_github(name):

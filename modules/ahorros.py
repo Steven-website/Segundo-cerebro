@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from core.data import get_df, save_df, uid, now_ts
 from core.constants import fmt
+from core.utils import confirm_delete, export_csv
 
 
 def render():
@@ -13,19 +14,30 @@ def render():
     # ═══════════════════════════════
     #  SAVINGS
     # ═══════════════════════════════
-    col_title, col_add = st.columns([5, 1])
+    col_title, col_exp, col_add = st.columns([4, 1, 1])
     with col_title:
         st.subheader("Metas de ahorro")
+    with col_exp:
+        export_csv(savings, "ahorros.csv", "\U0001f4e5 CSV")
     with col_add:
         if st.button("+ Meta", key="add_sav", use_container_width=True, type="primary"):
-            st.session_state["sav_adding"] = True
+            st.session_state["sav_editing"] = True
+            st.session_state["sav_edit_id"] = None
 
-    if st.session_state.get("sav_adding"):
+    if st.session_state.get("sav_editing"):
+        edit_id = st.session_state.get("sav_edit_id")
+        existing = None
+        if edit_id and not savings.empty:
+            matches = savings[savings["id"] == edit_id]
+            if not matches.empty:
+                existing = matches.iloc[0]
+
         with st.form("sav_form", clear_on_submit=True):
-            name = st.text_input("Nombre de la meta")
+            st.subheader("Editar meta" if existing is not None else "Nueva meta de ahorro")
+            name = st.text_input("Nombre", value=existing["name"] if existing is not None else "")
             c1, c2 = st.columns(2)
-            goal = c1.number_input("Meta (\u20a1)", min_value=0.0, step=10000.0)
-            current = c2.number_input("Ahorrado hasta ahora", min_value=0.0, step=1000.0, value=0.0)
+            goal = c1.number_input("Meta (\u20a1)", min_value=0.0, step=10000.0, value=float(existing["goal"]) if existing is not None else 0.0)
+            current = c2.number_input("Ahorrado", min_value=0.0, step=1000.0, value=float(existing["current"]) if existing is not None else 0.0)
             date = st.date_input("Fecha objetivo (opcional)", value=None)
 
             col_s, col_c = st.columns(2)
@@ -34,14 +46,18 @@ def render():
 
             if submitted and name.strip() and goal > 0:
                 new_row = {
-                    "id": uid(), "name": name.strip(), "goal": goal,
+                    "id": edit_id or uid(), "name": name.strip(), "goal": goal,
                     "current": current, "date": str(date) if date else "", "ts": now_ts(),
                 }
+                if edit_id and not savings.empty:
+                    savings = savings[savings["id"] != edit_id]
                 save_df("savings", pd.concat([pd.DataFrame([new_row]), savings], ignore_index=True))
-                st.session_state["sav_adding"] = False
+                st.session_state["sav_editing"] = False
+                st.session_state["sav_edit_id"] = None
                 st.rerun()
             if cancelled:
-                st.session_state["sav_adding"] = False
+                st.session_state["sav_editing"] = False
+                st.session_state["sav_edit_id"] = None
                 st.rerun()
 
     if savings.empty:
@@ -63,7 +79,11 @@ def render():
                             savings.loc[savings["id"] == s["id"], "current"] += amount
                             save_df("savings", savings)
                             st.rerun()
-                    if st.button("\U0001f5d1", key=f"sav_del_{s['id']}", use_container_width=True):
+                    if st.button("\u270f\ufe0f", key=f"sav_edit_{s['id']}", use_container_width=True):
+                        st.session_state["sav_editing"] = True
+                        st.session_state["sav_edit_id"] = s["id"]
+                        st.rerun()
+                    if confirm_delete(s["id"], s["name"], "sav"):
                         savings = savings[savings["id"] != s["id"]]
                         save_df("savings", savings)
                         st.rerun()
@@ -73,20 +93,31 @@ def render():
     # ═══════════════════════════════
     #  DEBTS
     # ═══════════════════════════════
-    col_title2, col_add2 = st.columns([5, 1])
+    col_title2, col_exp2, col_add2 = st.columns([4, 1, 1])
     with col_title2:
         st.subheader("Deudas")
+    with col_exp2:
+        export_csv(debts, "deudas.csv", "\U0001f4e5 CSV")
     with col_add2:
         if st.button("+ Deuda", key="add_debt", use_container_width=True, type="primary"):
-            st.session_state["debt_adding"] = True
+            st.session_state["debt_editing"] = True
+            st.session_state["debt_edit_id"] = None
 
-    if st.session_state.get("debt_adding"):
+    if st.session_state.get("debt_editing"):
+        edit_id = st.session_state.get("debt_edit_id")
+        existing = None
+        if edit_id and not debts.empty:
+            matches = debts[debts["id"] == edit_id]
+            if not matches.empty:
+                existing = matches.iloc[0]
+
         with st.form("debt_form", clear_on_submit=True):
-            name = st.text_input("Nombre de la deuda")
+            st.subheader("Editar deuda" if existing is not None else "Nueva deuda")
+            name = st.text_input("Nombre", value=existing["name"] if existing is not None else "")
             c1, c2, c3 = st.columns(3)
-            total = c1.number_input("Total (\u20a1)", min_value=0.0, step=10000.0)
-            paid = c2.number_input("Pagado", min_value=0.0, step=1000.0, value=0.0)
-            rate = c3.number_input("Tasa de interes (%)", min_value=0.0, step=0.5, value=0.0)
+            total = c1.number_input("Total (\u20a1)", min_value=0.0, step=10000.0, value=float(existing["total"]) if existing is not None else 0.0)
+            paid = c2.number_input("Pagado", min_value=0.0, step=1000.0, value=float(existing["paid"]) if existing is not None else 0.0)
+            rate = c3.number_input("Tasa interes (%)", min_value=0.0, step=0.5, value=float(existing["rate"]) if existing is not None else 0.0)
             due = st.date_input("Fecha vencimiento (opcional)", value=None)
 
             col_s, col_c = st.columns(2)
@@ -95,14 +126,18 @@ def render():
 
             if submitted and name.strip() and total > 0:
                 new_row = {
-                    "id": uid(), "name": name.strip(), "total": total,
+                    "id": edit_id or uid(), "name": name.strip(), "total": total,
                     "paid": paid, "rate": rate, "due": str(due) if due else "", "ts": now_ts(),
                 }
+                if edit_id and not debts.empty:
+                    debts = debts[debts["id"] != edit_id]
                 save_df("debts", pd.concat([pd.DataFrame([new_row]), debts], ignore_index=True))
-                st.session_state["debt_adding"] = False
+                st.session_state["debt_editing"] = False
+                st.session_state["debt_edit_id"] = None
                 st.rerun()
             if cancelled:
-                st.session_state["debt_adding"] = False
+                st.session_state["debt_editing"] = False
+                st.session_state["debt_edit_id"] = None
                 st.rerun()
 
     if debts.empty:
@@ -130,7 +165,11 @@ def render():
                             debts.loc[debts["id"] == d["id"], "paid"] = new_paid
                             save_df("debts", debts)
                             st.rerun()
-                    if st.button("\U0001f5d1", key=f"debt_del_{d['id']}", use_container_width=True):
+                    if st.button("\u270f\ufe0f", key=f"debt_edit_{d['id']}", use_container_width=True):
+                        st.session_state["debt_editing"] = True
+                        st.session_state["debt_edit_id"] = d["id"]
+                        st.rerun()
+                    if confirm_delete(d["id"], d["name"], "debt"):
                         debts = debts[debts["id"] != d["id"]]
                         save_df("debts", debts)
                         st.rerun()

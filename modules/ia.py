@@ -1,8 +1,8 @@
 import streamlit as st
-import json
 from datetime import datetime
 from core.data import get_df
 from core.constants import fmt
+from core.utils import parse_checks
 
 
 def _build_context():
@@ -63,12 +63,7 @@ def _build_context():
     if not habitos.empty:
         ctx += "HABITOS:\n"
         for _, h in habitos.iterrows():
-            checks = h.get("checks", "{}")
-            if isinstance(checks, str):
-                try:
-                    checks = json.loads(checks)
-                except Exception:
-                    checks = {}
+            checks = parse_checks(h.get("checks", "{}"))
             today = datetime.now().strftime("%Y-%m-%d")
             done_today = checks.get(today, False)
             ctx += f"{h['name']}({h['freq']})streak:{h.get('streak', 0)}hoy:{'si' if done_today else 'no'}\n"

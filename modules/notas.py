@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from core.data import get_df, save_df, uid, now_ts
 from core.constants import AREAS, AREA_LABELS, AREA_MAP
+from core.utils import confirm_delete, export_csv, get_area_id
 
 
 def render():
@@ -10,12 +11,14 @@ def render():
     notas = get_df("notas")
 
     # --- Toolbar ---
-    col_search, col_filter, col_add = st.columns([3, 2, 1])
+    col_search, col_filter, col_export, col_add = st.columns([3, 2, 1, 1])
     with col_search:
         search = st.text_input("Buscar", placeholder="Buscar por titulo o contenido...", label_visibility="collapsed")
     with col_filter:
         filter_options = ["Todas"] + [f'{a["emoji"]} {a["name"]}' for a in AREAS]
         filt = st.selectbox("Area", filter_options, label_visibility="collapsed")
+    with col_export:
+        export_csv(notas, "notas.csv", "\U0001f4e5 CSV")
     with col_add:
         add_nota = st.button("+ Nota", type="primary", use_container_width=True)
 
@@ -23,7 +26,7 @@ def render():
     filtered = notas.copy()
     if not filtered.empty:
         if filt != "Todas":
-            area_id = next((a["id"] for a in AREAS if f'{a["emoji"]} {a["name"]}' == filt), None)
+            area_id = get_area_id(filt)
             if area_id:
                 filtered = filtered[filtered["area"] == area_id]
         if search:
@@ -47,11 +50,11 @@ def render():
         with st.form("nota_form", clear_on_submit=True):
             st.subheader("Editar nota" if existing is not None else "Nueva nota")
             titulo = st.text_input("Titulo", value=existing["titulo"] if existing is not None else "")
+            area_ids = [a["id"] for a in AREAS]
             area = st.selectbox(
-                "Area",
-                [a["id"] for a in AREAS],
+                "Area", area_ids,
                 format_func=lambda x: AREA_LABELS.get(x, x),
-                index=[a["id"] for a in AREAS].index(existing["area"]) if existing is not None and existing["area"] in [a["id"] for a in AREAS] else 0,
+                index=area_ids.index(existing["area"]) if existing is not None and existing["area"] in area_ids else 0,
             )
             tags = st.text_input("Tags (separados por coma)", value=existing["tags"] if existing is not None else "")
             body = st.text_area("Contenido", value=existing["body"] if existing is not None else "", height=200)
@@ -89,8 +92,6 @@ def render():
     cols = st.columns(3)
     for i, (_, nota) in enumerate(filtered.iterrows()):
         with cols[i % 3]:
-            area_info = AREA_MAP.get(nota["area"], {})
-            color = area_info.get("color", "#2c2c32")
             area_label = AREA_LABELS.get(nota["area"], nota["area"])
             preview = (nota["body"][:120] + "...") if len(nota.get("body", "")) > 120 else nota.get("body", "")
 
@@ -99,13 +100,17 @@ def render():
                 if preview:
                     st.caption(preview)
                 st.caption(f"{area_label}")
+                if nota.get("tags"):
+                    st.caption(f"\U0001f3f7\ufe0f {nota['tags']}")
 
                 col_e, col_d = st.columns(2)
-                if col_e.button("\u270f\ufe0f", key=f"edit_{nota['id']}", use_container_width=True):
-                    st.session_state["nota_editing"] = True
-                    st.session_state["nota_edit_id"] = nota["id"]
-                    st.rerun()
-                if col_d.button("\U0001f5d1\ufe0f", key=f"del_{nota['id']}", use_container_width=True):
-                    notas = notas[notas["id"] != nota["id"]]
-                    save_df("notas", notas)
-                    st.rerun()
+                with col_e:
+                    if st.button("\u270f\ufe0f", key=f"edit_{nota['id']}", use_container_width=True):
+                        st.session_state["nota_editing"] = True
+                        st.session_state["nota_edit_id"] = nota["id"]
+                        st.rerun()
+                with col_d:
+                    if confirm_delete(nota["id"], nota["titulo"], "nota"):
+                        notas = notas[notas["id"] != nota["id"]]
+                        save_df("notas", notas)
+                        st.rerun()

@@ -3,13 +3,16 @@ import pandas as pd
 from datetime import datetime
 from core.data import get_df, save_df, uid, now_ts
 from core.constants import CAT_ICONS, TX_CATS_GASTO, TX_CATS_INGRESO, BUDGET_DEFAULT, fmt
+from core.utils import confirm_delete, export_csv
 
 
-def _get_month_txs(txs):
+def _get_month_txs(txs, year=None, month=None):
     if txs.empty:
         return txs
     now = datetime.now()
-    prefix = f"{now.year}-{now.month:02d}"
+    y = year or now.year
+    m = month or now.month
+    prefix = f"{y}-{m:02d}"
     return txs[txs["fecha"].str.startswith(prefix)]
 
 
@@ -19,7 +22,6 @@ def render():
     txs = get_df("txs")
     budget_df = get_df("budget")
 
-    # Load budget
     if budget_df.empty:
         budget = BUDGET_DEFAULT.copy()
     else:
@@ -40,14 +42,55 @@ def render():
 
     st.divider()
 
+    # --- Charts ---
+    if not txs.empty:
+        st.subheader("Tendencias")
+        col_chart1, col_chart2 = st.columns(2)
+
+        with col_chart1:
+            # Monthly income vs expenses (last 6 months)
+            now = datetime.now()
+            months_data = []
+            for i in range(5, -1, -1):
+                m = now.month - i
+                y = now.year
+                if m <= 0:
+                    m += 12
+                    y -= 1
+                m_txs = _get_month_txs(txs, y, m)
+                m_inc = float(m_txs[m_txs["type"] == "ingreso"]["amt"].sum()) if not m_txs.empty else 0
+                m_exp = float(m_txs[m_txs["type"] == "gasto"]["amt"].sum()) if not m_txs.empty else 0
+                label = f"{y}-{m:02d}"
+                months_data.append({"Mes": label, "Ingresos": m_inc, "Gastos": m_exp})
+
+            chart_df = pd.DataFrame(months_data)
+            if chart_df[["Ingresos", "Gastos"]].sum().sum() > 0:
+                st.caption("Ingresos vs Gastos (6 meses)")
+                st.bar_chart(chart_df.set_index("Mes"), color=["#4a9e7a", "#c96a6a"])
+
+        with col_chart2:
+            # Expenses by category (current month)
+            if not month_txs.empty:
+                gastos_df = month_txs[month_txs["type"] == "gasto"]
+                if not gastos_df.empty:
+                    cat_totals = gastos_df.groupby("cat")["amt"].sum().reset_index()
+                    cat_totals.columns = ["Categoria", "Monto"]
+                    cat_totals["Categoria"] = cat_totals["Categoria"].apply(lambda x: f"{CAT_ICONS.get(x, '')} {x.capitalize()}")
+                    st.caption("Gastos por categoria (mes actual)")
+                    st.bar_chart(cat_totals.set_index("Categoria"))
+
+        st.divider()
+
     # --- Add transaction ---
-    col_ing, col_gas = st.columns(2)
+    col_ing, col_gas, col_exp = st.columns([2, 2, 1])
     with col_ing:
         if st.button("+ Ingreso", use_container_width=True):
             st.session_state["tx_adding"] = "ingreso"
     with col_gas:
         if st.button("+ Gasto", use_container_width=True, type="primary"):
             st.session_state["tx_adding"] = "gasto"
+    with col_exp:
+        export_csv(txs, "transacciones.csv", "\U0001f4e5 CSV")
 
     if st.session_state.get("tx_adding"):
         tx_type = st.session_state["tx_adding"]
@@ -67,13 +110,8 @@ def render():
 
             if submitted and desc.strip() and amt > 0:
                 new_row = {
-                    "id": uid(),
-                    "type": tx_type,
-                    "desc": desc.strip(),
-                    "amt": amt,
-                    "cat": cat,
-                    "fecha": str(fecha),
-                    "ts": now_ts(),
+                    "id": uid(), "type": tx_type, "desc": desc.strip(),
+                    "amt": amt, "cat": cat, "fecha": str(fecha), "ts": now_ts(),
                 }
                 new_df = pd.concat([pd.DataFrame([new_row]), txs], ignore_index=True)
                 save_df("txs", new_df)
@@ -85,7 +123,7 @@ def render():
 
     st.divider()
 
-    # --- Budget progress ---
+    # --- Budget progress + Transactions ---
     col_budget, col_txs = st.columns(2)
 
     with col_budget:
@@ -96,13 +134,6 @@ def render():
             icon = CAT_ICONS.get(cat, "\U0001f4e6")
             spent = float(month_txs[(month_txs["type"] == "gasto") & (month_txs["cat"] == cat)]["amt"].sum()) if not month_txs.empty else 0
             pct = min(spent / limit, 1.0) if limit > 0 else 0
-
-            if pct < 0.7:
-                color = "green"
-            elif pct < 0.9:
-                color = "orange"
-            else:
-                color = "red"
 
             st.markdown(f"{icon} **{cat.capitalize()}** \u2022 {fmt(spent)} / {fmt(limit)}")
             st.progress(pct)
@@ -132,8 +163,7 @@ def render():
                 color = "green" if tx["type"] == "ingreso" else "red"
                 st.markdown(f"{icon} {tx['desc']} \u2022 :{color}[{sign}{fmt(tx['amt'])}] \u2022 `{tx['fecha']}`")
 
-                col_del = st.columns([8, 1])[1]
-                if col_del.button("\U0001f5d1", key=f"txdel_{tx['id']}"):
+                if confirm_delete(tx["id"], tx["desc"], "tx"):
                     txs = txs[txs["id"] != tx["id"]]
                     save_df("txs", txs)
                     st.rerun()

@@ -4,27 +4,11 @@ import json
 from datetime import datetime, timedelta
 from core.data import get_df, save_df, uid, now_ts
 from core.constants import HABIT_CATS, HABIT_FREQ
-
-
-def _parse_checks(checks_str):
-    if isinstance(checks_str, dict):
-        return checks_str
-    if isinstance(checks_str, str) and checks_str:
-        try:
-            return json.loads(checks_str)
-        except Exception:
-            return {}
-    return {}
-
-
-def _is_done_today(h):
-    checks = _parse_checks(h.get("checks", "{}"))
-    today = datetime.now().strftime("%Y-%m-%d")
-    return checks.get(today, False)
+from core.utils import parse_checks, is_done_today, confirm_delete, export_csv
 
 
 def _calc_streak(h):
-    checks = _parse_checks(h.get("checks", "{}"))
+    checks = parse_checks(h.get("checks", "{}"))
     streak = 0
     day = datetime.now()
     while True:
@@ -40,41 +24,39 @@ def _calc_streak(h):
     return streak
 
 
-def _get_today_habits(habitos_df):
-    if habitos_df.empty:
-        return habitos_df
-    dow = datetime.now().weekday()
-    mask = []
-    for _, h in habitos_df.iterrows():
-        freq = h.get("freq", "diario")
-        if freq == "laborables":
-            mask.append(dow < 5)
-        elif freq == "fines":
-            mask.append(dow >= 5)
-        else:
-            mask.append(True)
-    return habitos_df[mask]
-
-
 def render():
     st.header("Habitos")
 
     habitos = get_df("habitos")
 
-    col_spacer, col_add = st.columns([5, 1])
+    col_exp, col_add = st.columns([5, 1])
+    with col_exp:
+        export_csv(habitos, "habitos.csv", "\U0001f4e5 Exportar CSV")
     with col_add:
         if st.button("+ Habito", type="primary", use_container_width=True):
-            st.session_state["hab_adding"] = True
+            st.session_state["hab_editing"] = True
+            st.session_state["hab_edit_id"] = None
 
-    if st.session_state.get("hab_adding"):
+    if st.session_state.get("hab_editing"):
+        edit_id = st.session_state.get("hab_edit_id")
+        existing = None
+        if edit_id and not habitos.empty:
+            matches = habitos[habitos["id"] == edit_id]
+            if not matches.empty:
+                existing = matches.iloc[0]
+
         with st.form("hab_form", clear_on_submit=True):
-            st.subheader("Nuevo habito")
+            st.subheader("Editar habito" if existing is not None else "Nuevo habito")
             c1, c2 = st.columns([3, 1])
-            name = c1.text_input("Nombre")
-            emoji = c2.text_input("Emoji", value="\u2b50")
+            name = c1.text_input("Nombre", value=existing["name"] if existing is not None else "")
+            emoji = c2.text_input("Emoji", value=existing.get("emoji", "\u2b50") if existing is not None else "\u2b50")
             c3, c4 = st.columns(2)
-            cat = c3.selectbox("Categoria", list(HABIT_CATS.keys()), format_func=lambda x: f"{HABIT_CATS[x]} {x.capitalize()}")
-            freq = c4.selectbox("Frecuencia", list(HABIT_FREQ.keys()), format_func=lambda x: HABIT_FREQ[x])
+            cat_keys = list(HABIT_CATS.keys())
+            cat = c3.selectbox("Categoria", cat_keys, format_func=lambda x: f"{HABIT_CATS[x]} {x.capitalize()}",
+                               index=cat_keys.index(existing["cat"]) if existing is not None and existing["cat"] in cat_keys else 0)
+            freq_keys = list(HABIT_FREQ.keys())
+            freq = c4.selectbox("Frecuencia", freq_keys, format_func=lambda x: HABIT_FREQ[x],
+                                index=freq_keys.index(existing["freq"]) if existing is not None and existing["freq"] in freq_keys else 0)
 
             col_s, col_c = st.columns(2)
             submitted = col_s.form_submit_button("Guardar", type="primary")
@@ -82,19 +64,24 @@ def render():
 
             if submitted and name.strip():
                 new_row = {
-                    "id": uid(), "name": name.strip(), "emoji": emoji or "\u2b50",
-                    "cat": cat, "freq": freq, "checks": "{}", "streak": 0, "ts": now_ts(),
+                    "id": edit_id or uid(), "name": name.strip(), "emoji": emoji or "\u2b50",
+                    "cat": cat, "freq": freq,
+                    "checks": existing["checks"] if existing is not None else "{}",
+                    "streak": existing["streak"] if existing is not None else 0,
+                    "ts": now_ts(),
                 }
+                if edit_id and not habitos.empty:
+                    habitos = habitos[habitos["id"] != edit_id]
                 save_df("habitos", pd.concat([pd.DataFrame([new_row]), habitos], ignore_index=True))
-                st.session_state["hab_adding"] = False
+                st.session_state["hab_editing"] = False
+                st.session_state["hab_edit_id"] = None
                 st.rerun()
             if cancelled:
-                st.session_state["hab_adding"] = False
+                st.session_state["hab_editing"] = False
+                st.session_state["hab_edit_id"] = None
                 st.rerun()
 
     # --- Display habits ---
-    today_habs = _get_today_habits(habitos)
-
     if habitos.empty:
         st.info("No hay habitos configurados.")
         return
@@ -102,22 +89,27 @@ def render():
     cols = st.columns(2)
     for i, (idx, h) in enumerate(habitos.iterrows()):
         with cols[i % 2]:
-            checks = _parse_checks(h.get("checks", "{}"))
+            checks = parse_checks(h.get("checks", "{}"))
             today_str = datetime.now().strftime("%Y-%m-%d")
             done_today = checks.get(today_str, False)
             streak = _calc_streak(h)
 
             with st.container(border=True):
                 # Header
-                c_emoji, c_name, c_del = st.columns([1, 6, 1])
+                c_emoji, c_name, c_edit, c_del = st.columns([1, 5, 1, 1])
                 with c_emoji:
                     hab_emoji = h.get('emoji', '\u2b50')
                     st.markdown(f"### {hab_emoji}")
                 with c_name:
                     st.markdown(f"**{h['name']}**")
                     st.caption(f"{HABIT_CATS.get(h['cat'], '')} {h['cat'].capitalize()} \u2022 {HABIT_FREQ.get(h['freq'], h['freq'])}")
+                with c_edit:
+                    if st.button("\u270f\ufe0f", key=f"hedit_{h['id']}"):
+                        st.session_state["hab_editing"] = True
+                        st.session_state["hab_edit_id"] = h["id"]
+                        st.rerun()
                 with c_del:
-                    if st.button("\U0001f5d1", key=f"hdel_{h['id']}"):
+                    if confirm_delete(h["id"], h["name"], "hab"):
                         habitos = habitos[habitos["id"] != h["id"]]
                         save_df("habitos", habitos)
                         st.rerun()
