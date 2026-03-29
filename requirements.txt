@@ -1,2 +1,5 @@
 streamlit>=1.32.0
 anthropic>=0.40.0
+pandas>=2.0.0
+pyarrow>=12.0.0
+PyGithub>=2.0.0
