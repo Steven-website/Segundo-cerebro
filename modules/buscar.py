@@ -1,5 +1,5 @@
 import streamlit as st
-from core.data import get_df
+from core.data import get_df, save_df
 from core.constants import AREA_LABELS, fmt
 from core.utils import PRIORITY_EMOJIS
 
@@ -30,7 +30,7 @@ def render():
                 if query in t["titulo"].lower() or query in t.get("notas", "").lower() or query in t.get("subtareas", "").lower():
                     pri = PRIORITY_EMOJIS.get(t["prioridad"], "")
                     status = "✅" if t["done"] else "⬜"
-                    results.append({"icon": status, "type": "Tarea", "name": f"{pri} {t['titulo']}", "detail": AREA_LABELS.get(t["area"], t["area"]), "ts": t["ts"]})
+                    results.append({"icon": status, "type": "Tarea", "name": f"{pri} {t['titulo']}", "detail": AREA_LABELS.get(t["area"], t["area"]), "ts": t["ts"], "id": t["id"], "done": t["done"], "proyecto": t.get("proyecto", "")})
 
     # Proyectos
     if type_filter in ["Todos", "Proyectos"]:
@@ -39,7 +39,7 @@ def render():
             for _, p in proyectos.iterrows():
                 if query in p["nombre"].lower() or query in p.get("desc", "").lower():
                     emoji = p.get("emoji", "📁")
-                    results.append({"icon": emoji, "type": "Proyecto", "name": p["nombre"], "detail": p.get("desc", "")[:60], "ts": p["ts"]})
+                    results.append({"icon": emoji, "type": "Proyecto", "name": p["nombre"], "detail": p.get("desc", "")[:60], "ts": p["ts"], "id": p["id"]})
 
     # Transacciones
     if type_filter in ["Todos", "Finanzas"]:
@@ -92,8 +92,57 @@ def render():
         return
 
     results.sort(key=lambda x: x["ts"], reverse=True)
-    for r in results:
+    for i, r in enumerate(results):
         with st.container(border=True):
-            st.markdown(f"{r['icon']} **{r['name']}** `{r['type']}`")
-            if r["detail"]:
-                st.caption(r["detail"])
+            col_info, col_actions = st.columns([5, 2])
+            with col_info:
+                st.markdown(f"{r['icon']} **{r['name']}** `{r['type']}`")
+                if r["detail"]:
+                    st.caption(r["detail"])
+            with col_actions:
+                _render_search_actions(r, i)
+
+
+def _render_search_actions(result, index):
+    """Render quick action buttons based on result type."""
+    r_type = result["type"]
+    r_id = result.get("id", "")
+
+    if r_type == "Tarea" and r_id:
+        c1, c2 = st.columns(2)
+        with c1:
+            if not result.get("done", False):
+                if st.button("✅", key=f"sr_done_{index}", help="Completar", use_container_width=True):
+                    tareas = get_df("tareas")
+                    tareas.loc[tareas["id"] == r_id, "done"] = True
+                    save_df("tareas", tareas)
+                    st.rerun()
+        with c2:
+            if st.button("📂", key=f"sr_open_{index}", help="Abrir en proyecto", use_container_width=True):
+                st.session_state["nav_page"] = "◈ Proyectos"
+                if result.get("proyecto"):
+                    st.session_state["proj_viewing"] = result["proyecto"]
+                st.session_state["task_detail_id"] = r_id
+                st.rerun()
+
+    elif r_type == "Proyecto" and r_id:
+        if st.button("📂 Abrir", key=f"sr_proj_{index}", use_container_width=True):
+            st.session_state["nav_page"] = "◈ Proyectos"
+            st.session_state["proj_viewing"] = r_id
+            st.rerun()
+
+    elif r_type == "Comentario":
+        pass  # No direct action needed
+
+    else:
+        # For other types, show the type's page
+        page_map = {
+            "Ingreso": "₡ Finanzas", "Gasto": "₡ Finanzas",
+            "Inventario": "◣ Inventario", "Habito": "◉ Habitos",
+            "Audio": "🎤 Audios",
+        }
+        target = page_map.get(r_type)
+        if target:
+            if st.button("Ir", key=f"sr_go_{index}", use_container_width=True):
+                st.session_state["nav_page"] = target
+                st.rerun()
