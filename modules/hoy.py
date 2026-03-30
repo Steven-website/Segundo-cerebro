@@ -1,5 +1,6 @@
 import streamlit as st
 import json
+import pandas as pd
 from datetime import datetime
 from core.data import get_df, save_df
 from core.constants import AREA_LABELS, PRIORITY_LABELS
@@ -100,137 +101,147 @@ def _render_pendientes():
     tareas = get_df("tareas")
     proyectos = get_df("proyectos")
 
-    if tareas.empty:
-        st.info("No hay tareas. Crea un proyecto y agrega tareas para verlas aqui.")
-        return
-
     # === TASKS DUE TODAY OR OVERDUE ===
-    pending_tasks = tareas[~tareas["done"]].copy()
+    pending_tasks = tareas[~tareas["done"]].copy() if not tareas.empty else pd.DataFrame()
 
-    # Tasks with fecha <= today (due today or overdue)
     tasks_today = pending_tasks[
         (pending_tasks["fecha"] != "") &
         (pending_tasks["fecha"] <= today)
-    ].copy()
-
-    # Tasks without date (always show)
-    tasks_no_date = pending_tasks[pending_tasks["fecha"] == ""].copy()
+    ].copy() if not pending_tasks.empty else pd.DataFrame()
 
     # === SUBTASKS DUE TODAY OR OVERDUE ===
     subtask_items = []
-    for _, t in pending_tasks.iterrows():
-        subs = _parse_subtareas(t.get("subtareas", ""))
-        for i, sub in enumerate(subs):
-            if sub.get("done"):
+    if not pending_tasks.empty:
+        for _, t in pending_tasks.iterrows():
+            subs = _parse_subtareas(t.get("subtareas", ""))
+            for i, sub in enumerate(subs):
+                if sub.get("done"):
+                    continue
+                sub_fecha = sub.get("fecha", "")
+                if sub_fecha and sub_fecha <= today:
+                    proj_name = ""
+                    proj_id = t.get("proyecto", "")
+                    if proj_id and not proyectos.empty:
+                        proj_match = proyectos[proyectos["id"] == proj_id]
+                        if not proj_match.empty:
+                            proj_name = proj_match.iloc[0]["nombre"]
+
+                    subtask_items.append({
+                        "tarea_id": t["id"],
+                        "tarea_titulo": t["titulo"],
+                        "proyecto": proj_name,
+                        "proyecto_id": proj_id,
+                        "sub_index": i,
+                        "sub_text": sub["text"],
+                        "sub_fecha": sub_fecha,
+                        "overdue": sub_fecha < today,
+                    })
+
+    # === HABITS ===
+    from core.data import get_df as _get_df
+    from core.utils import is_done_today
+    from core.constants import HABIT_FREQ
+    habitos = _get_df("habitos")
+    dow = datetime.now().weekday()
+    today_habs = []
+    if not habitos.empty:
+        for _, h in habitos.iterrows():
+            freq = h.get("freq", "diario")
+            if freq == "laborables" and dow >= 5:
                 continue
-            sub_fecha = sub.get("fecha", "")
-            if sub_fecha and sub_fecha <= today:
-                # Get project name
-                proj_name = ""
-                if t.get("proyecto") and not proyectos.empty:
-                    proj_match = proyectos[proyectos["id"] == t["proyecto"]]
-                    if not proj_match.empty:
-                        proj_name = proj_match.iloc[0]["nombre"]
+            if freq == "fines" and dow < 5:
+                continue
+            today_habs.append(h)
+    habs_done = sum(1 for h in today_habs if is_done_today(h))
 
-                subtask_items.append({
-                    "tarea_id": t["id"],
-                    "tarea_titulo": t["titulo"],
-                    "proyecto": proj_name,
-                    "sub_index": i,
-                    "sub_text": sub["text"],
-                    "sub_fecha": sub_fecha,
-                    "overdue": sub_fecha < today,
-                })
+    # === METRICS ===
+    total_tasks = len(tasks_today)
+    total_subs = len(subtask_items)
+    total_habs = len(today_habs)
 
-    # === DISPLAY ===
-    total_items = len(tasks_today) + len(subtask_items)
-
-    # Metrics
     c1, c2, c3 = st.columns(3)
-    overdue_tasks = tasks_today[tasks_today["fecha"] < today] if not tasks_today.empty else pd.DataFrame()
-    overdue_subs = [s for s in subtask_items if s["overdue"]]
-    c1.metric("Pendientes hoy", total_items)
-    c2.metric("Tareas atrasadas", len(overdue_tasks) if not tasks_today.empty else 0)
-    c3.metric("Subtareas atrasadas", len(overdue_subs))
+    overdue_count = len(tasks_today[tasks_today["fecha"] < today]) if not tasks_today.empty else 0
+    c1.metric("Tareas hoy", f"{total_tasks}", delta=f"{overdue_count} atrasadas" if overdue_count else None, delta_color="inverse")
+    c2.metric("Subtareas hoy", f"{total_subs}")
+    c3.metric("Habitos", f"{habs_done}/{total_habs}")
 
     st.divider()
 
-    # --- Overdue section ---
-    all_overdue_tasks = tasks_today[tasks_today["fecha"] < today] if not tasks_today.empty else None
-    if (all_overdue_tasks is not None and not all_overdue_tasks.empty) or overdue_subs:
-        st.subheader("🔴 Atrasadas")
-        st.caption("Estas tareas ya pasaron su fecha limite")
-
-        if all_overdue_tasks is not None and not all_overdue_tasks.empty:
-            for _, t in all_overdue_tasks.iterrows():
-                _render_today_task(t, tareas, proyectos, overdue=True)
-
-        for sub in overdue_subs:
-            _render_today_subtask(sub, tareas)
-
+    # ═══ HABITS SECTION ═══
+    if today_habs:
+        st.subheader(f"◉ Habitos ({habs_done}/{total_habs})")
+        _render_today_habits_compact(today_habs, habitos)
         st.divider()
 
-    # --- Due today section ---
-    st.subheader("📋 Para hoy")
+    # ═══ OVERDUE SECTION ═══
+    overdue_tasks = tasks_today[tasks_today["fecha"] < today] if not tasks_today.empty else pd.DataFrame()
+    overdue_subs = [s for s in subtask_items if s["overdue"]]
 
-    due_exactly_today_tasks = tasks_today[tasks_today["fecha"] == today] if not tasks_today.empty else None
+    if (not overdue_tasks.empty) or overdue_subs:
+        st.subheader("🔴 Atrasadas")
+        if not overdue_tasks.empty:
+            _render_tasks_by_project(overdue_tasks, tareas, proyectos, overdue=True)
+        for sub in overdue_subs:
+            _render_today_subtask(sub, tareas)
+        st.divider()
+
+    # ═══ TODAY SECTION - GROUPED BY PROJECT ═══
+    due_today_tasks = tasks_today[tasks_today["fecha"] == today] if not tasks_today.empty else pd.DataFrame()
     today_subs = [s for s in subtask_items if not s["overdue"]]
 
-    if (due_exactly_today_tasks is None or due_exactly_today_tasks.empty) and not today_subs:
-        st.success("No hay pendientes para hoy. Buen trabajo!")
-    else:
-        if due_exactly_today_tasks is not None and not due_exactly_today_tasks.empty:
-            for _, t in due_exactly_today_tasks.iterrows():
-                _render_today_task(t, tareas, proyectos, overdue=False)
+    st.subheader("📋 Para hoy")
 
+    if due_today_tasks.empty and not today_subs:
+        st.success("No hay tareas pendientes para hoy. Buen trabajo!")
+    else:
+        if not due_today_tasks.empty:
+            _render_tasks_by_project(due_today_tasks, tareas, proyectos, overdue=False)
         for sub in today_subs:
             _render_today_subtask(sub, tareas)
 
     # --- Tasks without date ---
-    if not tasks_no_date.empty:
-        st.divider()
-        with st.expander(f"📌 Sin fecha asignada ({len(tasks_no_date)})"):
-            for _, t in tasks_no_date.iterrows():
-                _render_today_task(t, tareas, proyectos, overdue=False)
-
-    # ═══ HABITOS DE HOY ═══
-    st.divider()
-    _render_today_habits()
+    if not pending_tasks.empty:
+        tasks_no_date = pending_tasks[pending_tasks["fecha"] == ""].copy()
+        if not tasks_no_date.empty:
+            st.divider()
+            with st.expander(f"📌 Sin fecha asignada ({len(tasks_no_date)})"):
+                _render_tasks_by_project(tasks_no_date, tareas, proyectos, overdue=False)
 
 
-import pandas as pd
+def _render_tasks_by_project(task_df, tareas, proyectos, overdue=False):
+    """Render tasks grouped by project."""
+    if task_df.empty:
+        return
+
+    # Group by project
+    groups = {}
+    for _, t in task_df.iterrows():
+        proj_id = t.get("proyecto", "") or ""
+        if proj_id not in groups:
+            proj_name = "Sin proyecto"
+            proj_emoji = "📋"
+            if proj_id and not proyectos.empty:
+                pm = proyectos[proyectos["id"] == proj_id]
+                if not pm.empty:
+                    proj_name = pm.iloc[0]["nombre"]
+                    proj_emoji = pm.iloc[0].get("emoji", "📁")
+            groups[proj_id] = {"name": proj_name, "emoji": proj_emoji, "tasks": []}
+        groups[proj_id]["tasks"].append(t)
+
+    for proj_id, group in groups.items():
+        if len(groups) > 1 or proj_id:
+            st.caption(f"{group['emoji']} **{group['name']}**")
+        for t in group["tasks"]:
+            _render_today_task(t, tareas, proyectos, overdue=overdue)
 
 
-def _render_today_habits():
-    """Show today's habits with toggle."""
-    from core.data import get_df as _get_df, save_df as _save_df
-    from core.utils import parse_checks
-    from core.constants import HABIT_FREQ
+def _render_today_habits_compact(today_habs, habitos):
+    """Compact habit rendering for the Hoy page."""
+    from core.data import save_df as _save_df
+    from core.utils import parse_checks, is_done_today, get_day_completion
     import json as _json
 
-    habitos = _get_df("habitos")
-    if habitos.empty:
-        return
-
-    # Filter by frequency
-    dow = datetime.now().weekday()
     today_str = datetime.now().strftime("%Y-%m-%d")
-    today_habs = []
-    for _, h in habitos.iterrows():
-        freq = h.get("freq", "diario")
-        if freq == "laborables" and dow >= 5:
-            continue
-        if freq == "fines" and dow < 5:
-            continue
-        today_habs.append(h)
-
-    if not today_habs:
-        return
-
-    from core.utils import is_done_today, get_day_completion
-
-    done_count = sum(1 for h in today_habs if is_done_today(h))
-    st.subheader(f"Habitos de hoy ({done_count}/{len(today_habs)})")
 
     for h in today_habs:
         checks = parse_checks(h.get("checks", "{}"))
@@ -247,12 +258,8 @@ def _render_today_habits():
                 d_count, t_count = get_day_completion(h, today_str)
                 pct = int(d_count / t_count * 100) if t_count > 0 else 0
 
-                col_n, col_pct = st.columns([4, 1])
-                with col_n:
-                    status = "~~" if done_today else ""
-                    st.markdown(f"{emoji} {status}**{h['name']}**{status} — {d_count}/{t_count}")
-                with col_pct:
-                    st.caption(f"{pct}%")
+                status = "~~" if done_today else ""
+                st.markdown(f"{emoji} {status}**{h['name']}**{status} — {d_count}/{t_count} ({pct}%)")
 
                 rep_cols = st.columns(len(reps))
                 for ri, rep in enumerate(reps):
@@ -260,7 +267,6 @@ def _render_today_habits():
                         rep_done = today_val.get(rep, False)
                         new_val = st.checkbox(rep.capitalize(), value=rep_done, key=f"hoy_hrep_{h['id']}_{ri}")
                         if new_val != rep_done:
-                            import time as _time
                             today_val[rep] = new_val
                             checks[today_str] = today_val
                             habitos.loc[habitos["id"] == h["id"], "checks"] = _json.dumps(checks)
