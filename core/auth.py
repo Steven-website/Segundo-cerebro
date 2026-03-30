@@ -82,6 +82,55 @@ def _push_users_to_github():
         pass
 
 
+def _inject_remember_js():
+    """Inject JS to save/load credentials from localStorage."""
+    import streamlit.components.v1 as components
+    components.html("""
+    <script>
+    const saved = localStorage.getItem('sc_remember');
+    if (saved) {
+        const {email, pass: pw} = JSON.parse(saved);
+        const parent = window.parent.document;
+        const inputs = parent.querySelectorAll('input');
+        if (inputs.length >= 2) {
+            const emailInput = inputs[0];
+            const passInput = inputs[1];
+            function setVal(el, val) {
+                const nativeSetter = Object.getOwnPropertyDescriptor(
+                    window.HTMLInputElement.prototype, 'value').set;
+                nativeSetter.call(el, val);
+                el.dispatchEvent(new Event('input', {bubbles: true}));
+                el.dispatchEvent(new Event('change', {bubbles: true}));
+            }
+            setTimeout(() => { setVal(emailInput, email); setVal(passInput, pw); }, 300);
+        }
+    }
+    </script>
+    """, height=0)
+
+
+def _save_remember_js(email, password):
+    """Return JS to save credentials to localStorage."""
+    import streamlit.components.v1 as components
+    components.html(f"""
+    <script>
+    localStorage.setItem('sc_remember', JSON.stringify({{
+        email: "{email}", pass: "{password}"
+    }}));
+    </script>
+    """, height=0)
+
+
+def _clear_remember_js():
+    """Return JS to clear saved credentials."""
+    import streamlit.components.v1 as components
+    components.html("""
+    <script>
+    localStorage.removeItem('sc_remember');
+    </script>
+    """, height=0)
+
+
 def render_auth():
     st.markdown("---")
     col_spacer1, col_auth, col_spacer2 = st.columns([1, 2, 1])
@@ -91,12 +140,16 @@ def render_auth():
         st.caption("Sistema PKM Personal")
         st.markdown("---")
 
+        # Auto-fill saved credentials
+        _inject_remember_js()
+
         tab_login, tab_register = st.tabs(["Iniciar sesion", "Crear cuenta"])
 
         with tab_login:
             with st.form("login_form"):
                 username = st.text_input("Correo electronico", placeholder="correo@ejemplo.com")
                 password = st.text_input("Contrasena", type="password", placeholder="******")
+                remember = st.checkbox("Recordarme", value=True)
                 submitted = st.form_submit_button("Entrar", type="primary", use_container_width=True)
 
                 if submitted:
@@ -114,6 +167,10 @@ def render_auth():
                             if hashed != users[username]["hash"]:
                                 st.error("Contrasena incorrecta.")
                             else:
+                                if remember:
+                                    _save_remember_js(username, password)
+                                else:
+                                    _clear_remember_js()
                                 st.session_state["logged_in"] = True
                                 st.session_state["current_user"] = username
                                 st.session_state["user_data"] = users[username]
