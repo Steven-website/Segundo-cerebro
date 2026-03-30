@@ -115,7 +115,6 @@ def render():
                 cat_id = st.selectbox("Segmento", cat_ids, index=cat_idx, format_func=lambda x: cat_labels[cat_ids.index(x)])
 
                 link = st.text_input("Link de compra", value=existing.get("link", "") if existing is not None else "", placeholder="https://...")
-                imagen = st.text_input("URL de imagen", value=existing.get("imagen", "") if existing is not None else "", placeholder="https://...imagen.jpg")
 
                 # Price inputs
                 st.caption("Ingresa el precio en dolares O colones — el otro se calcula automatico.")
@@ -146,7 +145,7 @@ def render():
                     new_row = {
                         "id": edit_id or uid(), "cat_id": cat_id,
                         "nombre": nombre.strip(), "link": link.strip(),
-                        "imagen": imagen.strip(), "precio_usd": final_usd,
+                        "imagen": "", "precio_usd": final_usd,
                         "precio_crc": final_crc, "prioridad": prioridad,
                         "comprado": existing.get("comprado", False) if existing is not None else False,
                         "notas": notas.strip(), "ts": now_ts(),
@@ -224,49 +223,33 @@ def render():
 
 
 def _render_item(item, items_df, tc, bought=False):
-    """Render a single wishlist item."""
+    """Render a compact wishlist item."""
     pri_icons = {"alta": "🔴", "media": "🟡", "baja": "🟢"}
     pri = pri_icons.get(item.get("prioridad", "media"), "🟡")
 
-    with st.container(border=True):
-        # Image if available
-        if item.get("imagen") and str(item["imagen"]).startswith("http"):
-            try:
-                st.image(item["imagen"], width=120)
-            except Exception:
-                pass
+    usd = item.get("precio_usd", 0) or 0
+    crc = item.get("precio_crc", 0) or 0
+    status = "~~" if bought else ""
+    price_str = f" — {_fmt_usd(usd)} / ₡{crc:,.0f}" if (usd > 0 or crc > 0) else ""
+    link_str = f" [🔗]({item['link']})" if item.get("link") and str(item["link"]).startswith("http") else ""
 
-        status = "~~" if bought else ""
-        st.markdown(f"{pri} {status}**{item['nombre']}**{status}")
-
-        # Prices
-        usd = item.get("precio_usd", 0) or 0
-        crc = item.get("precio_crc", 0) or 0
-        if usd > 0 or crc > 0:
-            st.markdown(f"💲 {_fmt_usd(usd)} — ₡{crc:,.0f}")
-
-        # Link
-        if item.get("link") and str(item["link"]).startswith("http"):
-            st.markdown(f"[🔗 Comprar]({item['link']})")
-
-        # Notes
+    col_info, col_check, col_more = st.columns([5, 1, 1])
+    with col_info:
+        st.markdown(f"{pri} {status}**{item['nombre']}**{status}{price_str}{link_str}")
         if item.get("notas"):
             st.caption(item["notas"])
-
-        # Actions
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            check_label = "Desmarcar" if bought else "✅ Comprado"
-            if st.button(check_label, key=f"wl_buy_{item['id']}", use_container_width=True):
-                items_df.loc[items_df["id"] == item["id"], "comprado"] = not bought
-                save_df("wishlist", items_df)
-                st.rerun()
-        with c2:
-            if st.button("✏️", key=f"wl_edit_{item['id']}", use_container_width=True):
+    with col_check:
+        icon = "↩️" if bought else "✅"
+        if st.button(icon, key=f"wl_buy_{item['id']}", use_container_width=True):
+            items_df.loc[items_df["id"] == item["id"], "comprado"] = not bought
+            save_df("wishlist", items_df)
+            st.rerun()
+    with col_more:
+        with st.popover("⋯", use_container_width=True):
+            if st.button("✏️ Editar", key=f"wl_edit_{item['id']}", use_container_width=True):
                 st.session_state["wl_item_editing"] = True
                 st.session_state["wl_item_edit_id"] = item["id"]
                 st.rerun()
-        with c3:
             if confirm_delete(item["id"], item["nombre"], "wl_item"):
                 items_df = items_df[items_df["id"] != item["id"]]
                 save_df("wishlist", items_df)
