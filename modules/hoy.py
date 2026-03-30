@@ -81,13 +81,16 @@ def render():
 
     _check_undo()
 
-    tab_pendientes, tab_plan = st.tabs(["Pendientes", "Planificador"])
+    tab_pendientes, tab_plan, tab_focus = st.tabs(["Pendientes", "Planificador", "Modo enfoque"])
 
     with tab_pendientes:
         _render_pendientes()
 
     with tab_plan:
         _render_planificador()
+
+    with tab_focus:
+        _render_focus_mode()
 
 
 def _render_pendientes():
@@ -464,3 +467,144 @@ def _render_planificador():
                     blocks = blocks[blocks["id"] != b["id"]]
                     _save_df("plan_blocks", blocks)
                     st.rerun()
+
+
+def _render_focus_mode():
+    """Focus mode: show only the current task with integrated Pomodoro timer."""
+    from core.data import get_df as _get_df, save_df as _save_df, uid as _uid, now_ts as _now_ts
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    tareas = _get_df("tareas")
+    proyectos = _get_df("proyectos")
+
+    if tareas.empty:
+        st.info("No hay tareas pendientes.")
+        return
+
+    # Get prioritized pending tasks
+    pending = tareas[(~tareas["done"]) & ((tareas["fecha"] == today) | ((tareas["fecha"] != "") & (tareas["fecha"] <= today)))].copy()
+    if pending.empty:
+        pending = tareas[~tareas["done"]].copy()
+    if pending.empty:
+        st.success("Todas las tareas completadas. Buen trabajo!")
+        return
+
+    pri_order = {"alta": 0, "media": 1, "baja": 2}
+    pending["_pri"] = pending["prioridad"].map(pri_order).fillna(2)
+    pending = pending.sort_values("_pri")
+
+    # Task selector
+    task_options = []
+    for _, t in pending.iterrows():
+        pri = {"alta": "🔴", "media": "🟡", "baja": "🟢"}.get(t["prioridad"], "")
+        task_options.append(f"{pri} {t['titulo']}")
+
+    focus_idx = st.selectbox("Tarea actual", range(len(task_options)),
+                              format_func=lambda i: task_options[i],
+                              key="focus_task_sel", label_visibility="collapsed")
+
+    task = pending.iloc[focus_idx]
+    task_id = task["id"]
+
+    st.divider()
+
+    # Big task display
+    pri_emoji = {"alta": "🔴", "media": "🟡", "baja": "🟢"}.get(task["prioridad"], "")
+    st.markdown(f"## {pri_emoji} {task['titulo']}")
+
+    # Project info
+    if task.get("proyecto") and not proyectos.empty:
+        pm = proyectos[proyectos["id"] == task["proyecto"]]
+        if not pm.empty:
+            st.caption(f"📂 {pm.iloc[0].get('emoji', '📁')} {pm.iloc[0]['nombre']}")
+
+    if task.get("fecha"):
+        st.caption(f"📅 Fecha limite: {task['fecha']}")
+
+    if task.get("notas"):
+        st.markdown(task["notas"])
+
+    # Subtasks
+    subs = _parse_subtareas(task.get("subtareas", ""))
+    if subs:
+        st.markdown("**Subtareas:**")
+        updated = False
+        for i, sub in enumerate(subs):
+            done = sub.get("done", False)
+            new_done = st.checkbox(sub["text"], value=done, key=f"focus_sub_{task_id}_{i}")
+            if new_done != done:
+                subs[i]["done"] = new_done
+                updated = True
+        if updated:
+            tareas.loc[tareas["id"] == task_id, "subtareas"] = json.dumps(subs, ensure_ascii=False)
+            _save_df("tareas", tareas)
+            st.rerun()
+
+    st.divider()
+
+    # Pomodoro timer
+    st.subheader("🍅 Pomodoro")
+
+    if "focus_timer_start" not in st.session_state:
+        st.session_state["focus_timer_start"] = None
+    if "focus_timer_mins" not in st.session_state:
+        st.session_state["focus_timer_mins"] = 25
+
+    col_dur, col_start = st.columns(2)
+    with col_dur:
+        mins = st.selectbox("Duracion", [15, 25, 30, 45, 60], index=1,
+                            format_func=lambda x: f"{x} min", key="focus_pomo_dur")
+        st.session_state["focus_timer_mins"] = mins
+    with col_start:
+        if st.session_state["focus_timer_start"] is None:
+            if st.button("▶️ Iniciar", use_container_width=True, type="primary"):
+                import time
+                st.session_state["focus_timer_start"] = time.time()
+                st.rerun()
+        else:
+            import time
+            elapsed = time.time() - st.session_state["focus_timer_start"]
+            remaining = max(0, st.session_state["focus_timer_mins"] * 60 - elapsed)
+            mins_left = int(remaining // 60)
+            secs_left = int(remaining % 60)
+
+            if remaining <= 0:
+                st.success("🎉 Tiempo completado!")
+                # Save pomodoro session
+                pomo = _get_df("pomo_sessions")
+                new_session = {
+                    "id": _uid(), "tarea": task["titulo"],
+                    "minutos": st.session_state["focus_timer_mins"],
+                    "fecha": today, "ts": _now_ts(),
+                }
+                pomo = pd.concat([pd.DataFrame([new_session]), pomo], ignore_index=True)
+                _save_df("pomo_sessions", pomo)
+                if st.button("Reiniciar", use_container_width=True):
+                    st.session_state["focus_timer_start"] = None
+                    st.rerun()
+            else:
+                st.metric("Tiempo restante", f"{mins_left:02d}:{secs_left:02d}")
+                pct = 1 - (remaining / (st.session_state["focus_timer_mins"] * 60))
+                st.progress(pct)
+                if st.button("⏹️ Detener", use_container_width=True):
+                    st.session_state["focus_timer_start"] = None
+                    st.rerun()
+
+    st.divider()
+
+    # Complete task button
+    if st.button("✅ Completar tarea", use_container_width=True, type="primary"):
+        import time as _time
+        tareas.loc[tareas["id"] == task_id, "done"] = True
+        _save_df("tareas", tareas)
+        st.session_state["undo_action"] = {"tipo": "task_done", "id": task_id, "msg": f"Tarea completada: {task['titulo']}", "ts": _time.time()}
+        st.session_state["focus_timer_start"] = None
+        st.rerun()
+
+    # Skip to next
+    if len(pending) > 1:
+        if st.button("⏭️ Siguiente tarea", use_container_width=True):
+            next_idx = (focus_idx + 1) % len(pending)
+            st.session_state["focus_task_sel"] = next_idx
+            st.session_state["focus_timer_start"] = None
+            st.rerun()
