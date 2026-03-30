@@ -8,6 +8,14 @@ from core.utils import parse_checks, is_done_today, confirm_delete, export_csv
 import calendar
 
 
+STREAK_MILESTONES = [
+    (100, "💎", "Diamante — 100 dias!"),
+    (60, "👑", "Oro — 60 dias!"),
+    (30, "🥈", "Plata — 30 dias!"),
+    (7, "🥉", "Bronce — 7 dias!"),
+]
+
+
 def _calc_streak(h):
     checks = parse_checks(h.get("checks", "{}"))
     streak = 0
@@ -23,6 +31,14 @@ def _calc_streak(h):
                 continue
             break
     return streak
+
+
+def _get_streak_badge(streak):
+    """Return the highest milestone badge for a streak."""
+    for threshold, badge, label in STREAK_MILESTONES:
+        if streak >= threshold:
+            return badge, label
+    return "", ""
 
 
 def _calc_max_streak(checks_dict):
@@ -196,7 +212,10 @@ def _render_habits_list(habitos):
                         save_df("habitos", habitos)
                         st.rerun()
                 with c_streak:
+                    badge, badge_label = _get_streak_badge(streak)
                     st.metric("Racha", f"\U0001f525 {streak}")
+                    if badge:
+                        st.caption(f"{badge} {badge_label}")
 
 
 def _render_stats(habitos):
@@ -249,8 +268,14 @@ def _render_stats(habitos):
             mc1, mc2, mc3, mc4 = st.columns(4)
             mc1.metric("Cumplimiento", f"{pct}%")
             mc2.metric("Dias", f"{done_days}/{total_days}")
-            mc3.metric("Racha actual", f"\U0001f525 {current_streak}")
+            badge, badge_label = _get_streak_badge(current_streak)
+            streak_display = f"\U0001f525 {current_streak}"
+            if badge:
+                streak_display += f" {badge}"
+            mc3.metric("Racha actual", streak_display)
             mc4.metric("Racha maxima", f"\U0001f3c6 {max_streak}")
+            if badge_label:
+                st.success(f"{badge} {badge_label} Sigue asi!")
 
             # Monthly calendar grid
             st.caption(f"{MONTH_NAMES[month - 1]} {year}")
