@@ -43,6 +43,10 @@ HABIT_CATS = {
     "trabajo": "\U0001f4bc",
     "social": "\U0001f465",
     "finanzas": "\U0001f4b0",
+    "hogar": "\U0001f3e0",
+    "educacion": "\U0001f4da",
+    "creatividad": "\U0001f3a8",
+    "espiritualidad": "\U0001f54a\ufe0f",
     "otro": "\u2b50",
 }
 
