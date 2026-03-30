@@ -21,7 +21,7 @@ SCHEMAS = {
     "task_comments": {"id": str, "tarea_id": str, "texto": str, "autor": str, "ts": float},
     "debt_payments": {"id": str, "debt_id": str, "monto": float, "fecha": str, "nota": str, "ts": float},
     "metas": {"id": str, "titulo": str, "tipo": str, "periodo": str, "objetivo": str, "progreso": float, "completada": bool, "proyecto_id": str, "ts": float},
-    "tx_recurrentes": {"id": str, "type": str, "desc": str, "amt": float, "cat": str, "frecuencia": str, "dia": int, "activa": bool, "ts": float},
+    "tx_recurrentes": {"id": str, "type": str, "desc": str, "amt": float, "cat": str, "frecuencia": str, "dia": int, "fecha_inicio": str, "activa": bool, "ts": float},
     "budget": {"cat": str, "amt": float},
     "papelera": {"id": str, "tipo": str, "nombre": str, "data": str, "deleted_ts": float},
     "savings_hist": {"id": str, "saving_id": str, "monto": float, "balance": float, "fecha": str, "ts": float},
