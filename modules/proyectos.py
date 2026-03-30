@@ -139,14 +139,32 @@ def render():
 def _render_projects_kanban(proyectos, tareas):
     """Kanban board for projects grouped by status."""
     kanban_states = [("activo", "🟢 Activos"), ("pausado", "🟡 Pausados"), ("completado", "✅ Completados"), ("cancelado", "🔴 Cancelados")]
+
+    # Count per column
+    def _count_by_estado(est):
+        if est == "activo":
+            return len(proyectos[(proyectos["estado"].isin(["activo", ""])) | (proyectos["estado"].isna())])
+        return len(proyectos[proyectos["estado"] == est])
+
+    total_proj = len(proyectos) if not proyectos.empty else 1
+
     cols = st.columns(len(kanban_states))
     for col, (estado, label) in zip(cols, kanban_states):
         with col:
-            st.markdown(f"**{label}**")
+            count = _count_by_estado(estado)
+            pct_col = int(count / total_proj * 100) if total_proj > 0 else 0
+            st.markdown(f"**{label}** ({count})")
+            st.progress(pct_col / 100, text=f"{pct_col}%")
+
             if estado == "activo":
                 group = proyectos[(proyectos["estado"].isin(["activo", ""])) | (proyectos["estado"].isna())]
             else:
                 group = proyectos[proyectos["estado"] == estado]
+
+            # Move targets for arrows
+            estado_list = [s[0] for s in kanban_states]
+            idx = estado_list.index(estado)
+
             if group.empty:
                 st.caption("—")
             for _, p in group.iterrows():
@@ -158,9 +176,24 @@ def _render_projects_kanban(proyectos, tareas):
                     st.markdown(f"{p.get('emoji', '📁')} **{p['nombre']}**")
                     if total > 0:
                         st.progress(pct / 100, text=f"{done}/{total}")
-                    if st.button("Abrir", key=f"kb_{p['id']}", use_container_width=True):
-                        st.session_state["proj_viewing"] = p["id"]
-                        st.rerun()
+                    # Move arrows + Open
+                    arrow_cols = st.columns([1, 1, 2])
+                    with arrow_cols[0]:
+                        if idx > 0:
+                            if st.button("←", key=f"kb_l_{p['id']}", use_container_width=True, help=f"Mover a {kanban_states[idx-1][1]}"):
+                                proyectos.loc[proyectos["id"] == p["id"], "estado"] = estado_list[idx - 1]
+                                save_df("proyectos", proyectos)
+                                st.rerun()
+                    with arrow_cols[1]:
+                        if idx < len(estado_list) - 1:
+                            if st.button("→", key=f"kb_r_{p['id']}", use_container_width=True, help=f"Mover a {kanban_states[idx+1][1]}"):
+                                proyectos.loc[proyectos["id"] == p["id"], "estado"] = estado_list[idx + 1]
+                                save_df("proyectos", proyectos)
+                                st.rerun()
+                    with arrow_cols[2]:
+                        if st.button("Abrir", key=f"kb_{p['id']}", use_container_width=True):
+                            st.session_state["proj_viewing"] = p["id"]
+                            st.rerun()
 
 
 def _render_projects_list(proyectos, tareas):
@@ -343,15 +376,44 @@ def _get_task_status(t, subs=None):
 
 
 def _render_tasks_kanban(proj_tasks, tareas):
-    """Kanban board: Pendiente | En progreso | Completada."""
+    """Kanban board: Pendiente | En progreso | Completada with filters and move arrows."""
+    # Filters
+    col_fpri, col_ftag = st.columns(2)
+    with col_fpri:
+        pri_filter = st.selectbox("Prioridad", ["Todas", "alta", "media", "baja"],
+                                  format_func=lambda x: "Todas" if x == "Todas" else PRIORITY_LABELS.get(x, x),
+                                  key="kb_pri_filter", label_visibility="collapsed")
+    with col_ftag:
+        tag_filter = st.selectbox("Etiqueta", list(ETIQUETAS.keys()),
+                                  format_func=lambda x: ETIQUETAS.get(x, x),
+                                  key="kb_tag_filter", label_visibility="collapsed")
+
+    # Apply filters
+    filtered = proj_tasks.copy()
+    if pri_filter != "Todas":
+        filtered = filtered[filtered["prioridad"] == pri_filter]
+    if tag_filter:
+        if "etiqueta" in filtered.columns:
+            filtered = filtered[filtered["etiqueta"] == tag_filter]
+
     kanban_cols = [("pendiente", "⬜ Pendiente"), ("en_progreso", "🔄 En progreso"), ("completada", "✅ Completada")]
+    status_list = [s[0] for s in kanban_cols]
+    total_filtered = len(filtered) if not filtered.empty else 1
+
     cols = st.columns(3)
     for col, (status, label) in zip(cols, kanban_cols):
         with col:
-            st.markdown(f"**{label}**")
-            for _, t in proj_tasks.iterrows():
-                if _get_task_status(t) != status:
-                    continue
+            group = [t for _, t in filtered.iterrows() if _get_task_status(t) == status]
+            count = len(group)
+            pct_col = int(count / total_filtered * 100) if total_filtered > 0 else 0
+            st.markdown(f"**{label}** ({count})")
+            st.progress(pct_col / 100, text=f"{pct_col}%")
+
+            idx = status_list.index(status)
+
+            if not group:
+                st.caption("—")
+            for t in group:
                 pri_emoji = PRIORITY_EMOJIS.get(t["prioridad"], "")
                 subs = _parse_subtareas(t.get("subtareas", ""))
                 sub_done = sum(1 for s in subs if s.get("done"))
@@ -367,9 +429,47 @@ def _render_tasks_kanban(proj_tasks, tareas):
                         info.append(ETIQUETAS.get(tag, tag))
                     if info:
                         st.caption(" | ".join(info))
-                    if st.button("Abrir", key=f"kb_t_{t['id']}", use_container_width=True):
-                        st.session_state["task_detail_id"] = t["id"]
-                        st.rerun()
+                    # Move arrows + Open
+                    arrow_cols = st.columns([1, 1, 2])
+                    with arrow_cols[0]:
+                        if idx > 0:
+                            target = status_list[idx - 1]
+                            if st.button("←", key=f"kb_tl_{t['id']}", use_container_width=True):
+                                _move_task_status(t, target, tareas)
+                                st.rerun()
+                    with arrow_cols[1]:
+                        if idx < len(status_list) - 1:
+                            target = status_list[idx + 1]
+                            if st.button("→", key=f"kb_tr_{t['id']}", use_container_width=True):
+                                _move_task_status(t, target, tareas)
+                                st.rerun()
+                    with arrow_cols[2]:
+                        if st.button("Abrir", key=f"kb_t_{t['id']}", use_container_width=True):
+                            st.session_state["task_detail_id"] = t["id"]
+                            st.rerun()
+
+
+def _move_task_status(task, target_status, tareas):
+    """Move a task to a target kanban status by updating done/subtasks."""
+    task_id = task["id"]
+    if target_status == "completada":
+        tareas.loc[tareas["id"] == task_id, "done"] = True
+    elif target_status == "pendiente":
+        tareas.loc[tareas["id"] == task_id, "done"] = False
+        # Reset all subtasks
+        subs = _parse_subtareas(task.get("subtareas", ""))
+        if subs:
+            for s in subs:
+                s["done"] = False
+            tareas.loc[tareas["id"] == task_id, "subtareas"] = _save_subtareas(subs)
+    elif target_status == "en_progreso":
+        tareas.loc[tareas["id"] == task_id, "done"] = False
+        # Mark first subtask done if none are, to trigger en_progreso
+        subs = _parse_subtareas(task.get("subtareas", ""))
+        if subs and not any(s.get("done") for s in subs):
+            subs[0]["done"] = True
+            tareas.loc[tareas["id"] == task_id, "subtareas"] = _save_subtareas(subs)
+    save_df("tareas", tareas)
 
 
 def _render_tasks_list(proj_tasks, tareas):
@@ -511,42 +611,40 @@ def _render_task_detail(task, tareas, proyectos):
         updated = False
 
         if sub_view == "Kanban":
+            total_subs = len(subs) if subs else 1
+            pct_pend = int(sub_pending / total_subs * 100) if total_subs > 0 else 0
+            pct_done = int(sub_done_count / total_subs * 100) if total_subs > 0 else 0
+
             col_pend, col_done = st.columns(2)
             with col_pend:
-                st.markdown("**⬜ Pendientes**")
+                st.markdown(f"**⬜ Pendientes** ({sub_pending})")
+                st.progress(pct_pend / 100, text=f"{pct_pend}%")
                 for i, sub in enumerate(subs):
                     if sub.get("done"):
                         continue
                     with st.container(border=True):
-                        col_c, col_t = st.columns([0.5, 5.5])
-                        with col_c:
-                            checked = st.checkbox("", value=False, key=f"sub_{task_id}_{i}", label_visibility="collapsed")
-                            if checked:
-                                subs[i]["done"] = True
-                                updated = True
-                        with col_t:
-                            st.markdown(sub["text"])
-                            sub_fecha = sub.get("fecha", "")
-                            if sub_fecha:
-                                today = datetime.now().strftime("%Y-%m-%d")
-                                color = "red" if sub_fecha < today else "gray"
-                                st.caption(f":{color}[📅 {sub_fecha}]")
+                        st.markdown(sub["text"])
+                        sub_fecha = sub.get("fecha", "")
+                        if sub_fecha:
+                            today = datetime.now().strftime("%Y-%m-%d")
+                            color = "red" if sub_fecha < today else "gray"
+                            st.caption(f":{color}[📅 {sub_fecha}]")
+                        if st.button("Completar →", key=f"sub_mv_{task_id}_{i}", use_container_width=True):
+                            subs[i]["done"] = True
+                            updated = True
                 if sub_pending == 0:
                     st.caption("—")
             with col_done:
-                st.markdown("**✅ Completadas**")
+                st.markdown(f"**✅ Completadas** ({sub_done_count})")
+                st.progress(pct_done / 100, text=f"{pct_done}%")
                 for i, sub in enumerate(subs):
                     if not sub.get("done"):
                         continue
                     with st.container(border=True):
-                        col_c, col_t = st.columns([0.5, 5.5])
-                        with col_c:
-                            checked = st.checkbox("", value=True, key=f"sub_{task_id}_{i}", label_visibility="collapsed")
-                            if not checked:
-                                subs[i]["done"] = False
-                                updated = True
-                        with col_t:
-                            st.markdown(f"~~{sub['text']}~~")
+                        st.markdown(f"~~{sub['text']}~~")
+                        if st.button("← Reabrir", key=f"sub_mv_{task_id}_{i}", use_container_width=True):
+                            subs[i]["done"] = False
+                            updated = True
                 if sub_done_count == 0:
                     st.caption("—")
         else:
