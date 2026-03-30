@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
-from core.data import get_df
+from core.data import get_df, save_df, uid, now_ts
 from core.constants import AREA_LABELS, fmt, HABIT_FREQ
 from core.utils import is_done_today, parse_checks, PRIORITY_EMOJIS
 
@@ -100,6 +100,10 @@ def render():
                 else:
                     st.info(f"{msg} — {detail}")
         st.divider()
+
+    # --- Quick notes ---
+    _render_quick_notes(tareas, proyectos)
+    st.divider()
 
     # --- Widget config ---
     with st.expander("Personalizar widgets"):
@@ -313,3 +317,81 @@ def render():
                     proj_emoji = p.get('emoji', '📁')
                     st.markdown(f"{proj_emoji} **{p['nombre']}** - {pct}%")
                     st.progress(pct / 100)
+
+
+def _render_quick_notes(tareas, proyectos):
+    """Quick capture notes with convert-to-task action."""
+    notas = get_df("notas_rapidas")
+
+    with st.expander("📝 Notas rapidas", expanded=False):
+        # Add note
+        with st.form("quick_note_form", clear_on_submit=True):
+            col_input, col_btn = st.columns([5, 1])
+            texto = col_input.text_input("Captura una idea...", placeholder="Escribe algo rapido", label_visibility="collapsed")
+            submitted = col_btn.form_submit_button("💡", type="primary")
+            if submitted and texto.strip():
+                new_note = {
+                    "id": uid(), "texto": texto.strip(),
+                    "fecha": datetime.now().strftime("%Y-%m-%d %H:%M"), "ts": now_ts(),
+                }
+                notas = pd.concat([pd.DataFrame([new_note]), notas], ignore_index=True)
+                save_df("notas_rapidas", notas)
+                st.rerun()
+
+        # Display notes
+        if notas.empty:
+            st.caption("Escribe ideas, recordatorios o lo que se te ocurra.")
+        else:
+            for _, n in notas.sort_values("ts", ascending=False).head(10).iterrows():
+                col_note, col_actions = st.columns([5, 2])
+                with col_note:
+                    st.markdown(f"💡 {n['texto']}")
+                    st.caption(n["fecha"])
+                with col_actions:
+                    ca, cb = st.columns(2)
+                    with ca:
+                        if st.button("📋", key=f"qn_task_{n['id']}", help="Crear tarea"):
+                            st.session_state["qn_to_task"] = n["id"]
+                            st.rerun()
+                    with cb:
+                        if st.button("🗑️", key=f"qn_del_{n['id']}", help="Eliminar"):
+                            notas = notas[notas["id"] != n["id"]]
+                            save_df("notas_rapidas", notas)
+                            st.rerun()
+
+        # Convert to task form
+        if st.session_state.get("qn_to_task"):
+            note_id = st.session_state["qn_to_task"]
+            note_match = notas[notas["id"] == note_id] if not notas.empty else pd.DataFrame()
+            if not note_match.empty:
+                note = note_match.iloc[0]
+                with st.form("qn_task_form"):
+                    st.subheader("Convertir en tarea")
+                    titulo = st.text_input("Titulo", value=note["texto"])
+                    proj_options = ["Sin proyecto"]
+                    proj_ids = [""]
+                    if not proyectos.empty:
+                        for _, p in proyectos.iterrows():
+                            proj_options.append(f"{p.get('emoji', '📁')} {p['nombre']}")
+                            proj_ids.append(p["id"])
+                    proj_sel = st.selectbox("Proyecto", range(len(proj_options)), format_func=lambda i: proj_options[i])
+
+                    col_s, col_c = st.columns(2)
+                    if col_s.form_submit_button("Crear tarea", type="primary"):
+                        new_task = {
+                            "id": uid(), "titulo": titulo.strip(), "area": "personal",
+                            "prioridad": "media", "fecha_inicio": "", "fecha": "",
+                            "proyecto": proj_ids[proj_sel], "notas": "", "subtareas": "",
+                            "recurrente": "", "depende_de": "", "etiqueta": "",
+                            "done": False, "pinned": False, "archived": False, "ts": now_ts(),
+                        }
+                        tareas = pd.concat([pd.DataFrame([new_task]), tareas], ignore_index=True)
+                        save_df("tareas", tareas)
+                        # Remove note
+                        notas = notas[notas["id"] != note_id]
+                        save_df("notas_rapidas", notas)
+                        st.session_state["qn_to_task"] = None
+                        st.rerun()
+                    if col_c.form_submit_button("Cancelar"):
+                        st.session_state["qn_to_task"] = None
+                        st.rerun()
