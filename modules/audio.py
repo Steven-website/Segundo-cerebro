@@ -1,138 +1,20 @@
 import streamlit as st
 import pandas as pd
-import json
 import io
+from datetime import datetime
 from core.data import get_df, save_df, uid, now_ts
-from core.constants import AREAS, AREA_OPTIONS
 from core.utils import confirm_delete
-
-
-def _transcribe_audio(audio_bytes):
-    """Transcribe audio bytes using SpeechRecognition + Google free API."""
-    import speech_recognition as sr
-    recognizer = sr.Recognizer()
-
-    # Convert bytes to WAV AudioData
-    audio_file = io.BytesIO(audio_bytes)
-    try:
-        with sr.AudioFile(audio_file) as source:
-            audio_data = recognizer.record(source)
-        text = recognizer.recognize_google(audio_data, language="es-CR")
-        return text
-    except sr.UnknownValueError:
-        return None
-    except Exception as e:
-        raise e
-
-
-def _convert_to_wav(audio_bytes, filename):
-    """Convert uploaded audio to WAV format for speech_recognition."""
-    from pydub import AudioSegment
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "wav"
-    if ext == "wav":
-        return audio_bytes
-    audio_seg = AudioSegment.from_file(io.BytesIO(audio_bytes), format=ext)
-    wav_buf = io.BytesIO()
-    audio_seg.export(wav_buf, format="wav")
-    return wav_buf.getvalue()
-
-
-def _analyze_with_ai(transcript, api_key):
-    """Send transcript to Claude to extract key points and pending tasks."""
-    import anthropic
-    client = anthropic.Anthropic(api_key=api_key)
-
-    prompt = f"""Analiza la siguiente transcripcion de audio y devuelve un JSON con exactamente esta estructura:
-{{
-  "resumen": "Resumen breve del audio en 2-3 oraciones",
-  "puntos_clave": ["punto 1", "punto 2", ...],
-  "pendientes": ["tarea pendiente 1", "tarea pendiente 2", ...]
-}}
-
-Reglas:
-- "puntos_clave": los puntos o ideas principales mencionados
-- "pendientes": cualquier tarea, compromiso, accion a realizar, cosa por hacer, o recordatorio mencionado
-- Si no hay pendientes claros, devuelve lista vacia
-- Responde SOLO el JSON, sin texto adicional
-- Todo en espanol
-
-Transcripcion:
-{transcript}"""
-
-    response = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=1500,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    result_text = "".join(block.text for block in response.content if hasattr(block, "text"))
-
-    # Parse JSON from response
-    result_text = result_text.strip()
-    if result_text.startswith("```"):
-        result_text = result_text.split("\n", 1)[1]
-        if result_text.endswith("```"):
-            result_text = result_text[:-3]
-        result_text = result_text.strip()
-
-    return json.loads(result_text)
-
-
-def _create_tasks_from_pendientes(pendientes, source_title, proyecto="", area="personal"):
-    """Create tasks in the tareas module from extracted pendientes."""
-    tareas = get_df("tareas")
-    new_rows = []
-    for p in pendientes:
-        new_rows.append({
-            "id": uid(),
-            "titulo": p,
-            "area": area,
-            "prioridad": "media",
-            "fecha": "",
-            "proyecto": proyecto,
-            "notas": f"Extraido de audio: {source_title}",
-            "subtareas": "[]",
-            "recurrente": "",
-            "done": False,
-            "pinned": False,
-            "archived": False,
-            "ts": now_ts(),
-        })
-    if new_rows:
-        tareas = pd.concat([pd.DataFrame(new_rows), tareas], ignore_index=True)
-        save_df("tareas", tareas)
-    return len(new_rows)
 
 
 def render():
     st.header("Audios")
-    st.caption("Graba o sube audios y la IA extrae puntos clave y tareas pendientes")
+    st.caption("Graba o sube audios, agrega comentarios y descargalos")
 
     audios = get_df("audios")
-
-    # --- API Key check ---
-    api_key = st.session_state.get("ai_key", "")
-    if not api_key:
-        st.warning("Configura tu API Key de Anthropic en la pagina **Buscar con IA** para usar el analisis.")
 
     # ═══════════════════════════════
     #  RECORD / UPLOAD
     # ═══════════════════════════════
-    # --- Project / Area selector for tasks ---
-    proyectos = get_df("proyectos")
-    proy_list = ["Sin proyecto"]
-    if not proyectos.empty:
-        proy_list += proyectos["nombre"].tolist()
-    area_labels = list(AREA_OPTIONS.keys())
-
-    col_proy, col_area = st.columns(2)
-    with col_proy:
-        sel_proy = st.selectbox("Asignar pendientes a proyecto", proy_list, key="audio_proy")
-    with col_area:
-        sel_area = st.selectbox("Area", area_labels, key="audio_area")
-
-    proyecto_name = sel_proy if sel_proy != "Sin proyecto" else ""
-    area_id = AREA_OPTIONS.get(sel_area, "personal")
-
     tab_record, tab_upload = st.tabs(["Grabar audio", "Subir archivo"])
 
     with tab_record:
@@ -141,58 +23,35 @@ def render():
 
         if audio_input is not None:
             st.audio(audio_input)
-            titulo = st.text_input("Titulo para esta grabacion", value="", key="rec_titulo",
-                                   placeholder="Ej: Reunion de trabajo, Ideas proyecto...")
+            with st.form("save_recording", clear_on_submit=True):
+                titulo = st.text_input("Titulo", placeholder="Ej: Reunion de trabajo, Nota de voz...")
+                fecha = st.date_input("Fecha", value=datetime.now())
+                comentario = st.text_area("Comentario", placeholder="Agrega una nota sobre este audio...", height=80)
 
-            if st.button("Analizar grabacion", type="primary", key="btn_analyze_rec"):
-                if not api_key:
-                    st.error("Configura tu API key primero en Buscar con IA.")
-                    return
+                if st.form_submit_button("Guardar grabacion", type="primary"):
+                    title = titulo.strip() or "Grabacion sin titulo"
+                    audio_bytes = audio_input.getvalue()
 
-                audio_bytes = audio_input.getvalue()
-                title = titulo.strip() or "Grabacion sin titulo"
+                    new_audio = {
+                        "id": uid(),
+                        "titulo": title,
+                        "fecha": str(fecha),
+                        "comentario": comentario.strip(),
+                        "formato": "wav",
+                        "tamano": len(audio_bytes),
+                        "transcript": "",
+                        "resumen": "",
+                        "puntos_clave": "[]",
+                        "pendientes": "[]",
+                        "ts": now_ts(),
+                    }
+                    audios = pd.concat([pd.DataFrame([new_audio]), audios], ignore_index=True)
+                    save_df("audios", audios)
 
-                with st.spinner("Transcribiendo audio..."):
-                    try:
-                        transcript = _transcribe_audio(audio_bytes)
-                    except Exception as e:
-                        st.error(f"Error al transcribir: {e}")
-                        return
-
-                if not transcript:
-                    st.error("No se pudo reconocer texto en el audio. Intenta hablar mas claro o mas cerca del microfono.")
-                    return
-
-                st.success("Audio transcrito correctamente")
-                st.markdown(f"**Transcripcion:** {transcript}")
-
-                with st.spinner("Analizando con IA..."):
-                    try:
-                        analysis = _analyze_with_ai(transcript, api_key)
-                    except Exception as e:
-                        st.error(f"Error al analizar: {e}")
-                        return
-
-                # Save to audios dataframe
-                new_audio = {
-                    "id": uid(),
-                    "titulo": title,
-                    "transcript": transcript,
-                    "resumen": analysis.get("resumen", ""),
-                    "puntos_clave": json.dumps(analysis.get("puntos_clave", []), ensure_ascii=False),
-                    "pendientes": json.dumps(analysis.get("pendientes", []), ensure_ascii=False),
-                    "ts": now_ts(),
-                }
-                audios = pd.concat([pd.DataFrame([new_audio]), audios], ignore_index=True)
-                save_df("audios", audios)
-
-                # Auto-create tasks
-                pends = analysis.get("pendientes", [])
-                if pends:
-                    count = _create_tasks_from_pendientes(pends, title, proyecto_name, area_id)
-                    st.success(f"Se crearon {count} tarea(s) en el modulo de Tareas.")
-
-                st.rerun()
+                    # Save audio file locally for download
+                    _save_audio_file(new_audio["id"], audio_bytes, "wav")
+                    st.success(f"Audio '{title}' guardado")
+                    st.rerun()
 
     with tab_upload:
         uploaded = st.file_uploader(
@@ -203,112 +62,164 @@ def render():
 
         if uploaded is not None:
             st.audio(uploaded)
-            titulo_up = st.text_input("Titulo para este audio", value="", key="up_titulo",
-                                      placeholder="Ej: Nota de voz, Entrevista...")
+            with st.form("save_upload", clear_on_submit=True):
+                titulo_up = st.text_input("Titulo", value=uploaded.name.rsplit(".", 1)[0] if "." in uploaded.name else uploaded.name)
+                fecha_up = st.date_input("Fecha", value=datetime.now(), key="up_fecha")
+                comentario_up = st.text_area("Comentario", placeholder="Agrega una nota sobre este audio...", height=80, key="up_comentario")
 
-            if st.button("Analizar archivo", type="primary", key="btn_analyze_up"):
-                if not api_key:
-                    st.error("Configura tu API key primero en Buscar con IA.")
-                    return
+                if st.form_submit_button("Guardar archivo", type="primary"):
+                    title = titulo_up.strip() or uploaded.name
+                    audio_bytes = uploaded.getvalue()
+                    ext = uploaded.name.rsplit(".", 1)[-1].lower() if "." in uploaded.name else "wav"
 
-                audio_bytes = uploaded.getvalue()
-                title = titulo_up.strip() or uploaded.name
+                    new_audio = {
+                        "id": uid(),
+                        "titulo": title,
+                        "fecha": str(fecha_up),
+                        "comentario": comentario_up.strip(),
+                        "formato": ext,
+                        "tamano": len(audio_bytes),
+                        "transcript": "",
+                        "resumen": "",
+                        "puntos_clave": "[]",
+                        "pendientes": "[]",
+                        "ts": now_ts(),
+                    }
+                    audios = pd.concat([pd.DataFrame([new_audio]), audios], ignore_index=True)
+                    save_df("audios", audios)
 
-                with st.spinner("Convirtiendo audio..."):
-                    try:
-                        wav_bytes = _convert_to_wav(audio_bytes, uploaded.name)
-                    except Exception as e:
-                        st.error(f"Error al convertir audio: {e}")
-                        return
-
-                with st.spinner("Transcribiendo audio..."):
-                    try:
-                        transcript = _transcribe_audio(wav_bytes)
-                    except Exception as e:
-                        st.error(f"Error al transcribir: {e}")
-                        return
-
-                if not transcript:
-                    st.error("No se pudo reconocer texto en el audio. Verifica que el archivo tenga voz clara.")
-                    return
-
-                st.success("Audio transcrito correctamente")
-                st.markdown(f"**Transcripcion:** {transcript}")
-
-                with st.spinner("Analizando con IA..."):
-                    try:
-                        analysis = _analyze_with_ai(transcript, api_key)
-                    except Exception as e:
-                        st.error(f"Error al analizar: {e}")
-                        return
-
-                new_audio = {
-                    "id": uid(),
-                    "titulo": title,
-                    "transcript": transcript,
-                    "resumen": analysis.get("resumen", ""),
-                    "puntos_clave": json.dumps(analysis.get("puntos_clave", []), ensure_ascii=False),
-                    "pendientes": json.dumps(analysis.get("pendientes", []), ensure_ascii=False),
-                    "ts": now_ts(),
-                }
-                audios = pd.concat([pd.DataFrame([new_audio]), audios], ignore_index=True)
-                save_df("audios", audios)
-
-                pends = analysis.get("pendientes", [])
-                if pends:
-                    count = _create_tasks_from_pendientes(pends, title, proyecto_name, area_id)
-                    st.success(f"Se crearon {count} tarea(s) en el modulo de Tareas.")
-
-                st.rerun()
+                    _save_audio_file(new_audio["id"], audio_bytes, ext)
+                    st.success(f"Audio '{title}' guardado")
+                    st.rerun()
 
     # ═══════════════════════════════
     #  HISTORY
     # ═══════════════════════════════
     st.divider()
-    st.subheader("Historial de audios analizados")
+    st.subheader("Mis audios")
 
     if audios.empty:
-        st.info("No hay audios analizados aun. Graba o sube uno para empezar.")
+        st.info("No hay audios guardados. Graba o sube uno para empezar.")
         return
 
-    for _, a in audios.iterrows():
+    # Filter by date
+    col_filter, col_count = st.columns([3, 1])
+    with col_filter:
+        filter_opt = st.selectbox("Ordenar", ["Mas recientes", "Mas antiguos", "Por fecha"], key="audio_filter")
+    with col_count:
+        st.metric("Total", len(audios))
+
+    sorted_audios = audios.copy()
+    if filter_opt == "Mas recientes":
+        sorted_audios = sorted_audios.sort_values("ts", ascending=False)
+    elif filter_opt == "Mas antiguos":
+        sorted_audios = sorted_audios.sort_values("ts", ascending=True)
+    elif filter_opt == "Por fecha":
+        if "fecha" in sorted_audios.columns:
+            sorted_audios = sorted_audios.sort_values("fecha", ascending=False)
+
+    for _, a in sorted_audios.iterrows():
         with st.container(border=True):
             col1, col2 = st.columns([5, 1])
             with col1:
-                from datetime import datetime
-                ts_str = datetime.fromtimestamp(a["ts"]).strftime("%d/%m/%Y %H:%M") if a["ts"] else ""
                 st.markdown(f"### {a['titulo']}")
-                st.caption(ts_str)
+                info_parts = []
+                if a.get("fecha"):
+                    info_parts.append(f"📅 {a['fecha']}")
+                if a.get("formato"):
+                    info_parts.append(f"📁 {a['formato'].upper()}")
+                if a.get("tamano"):
+                    size_kb = a["tamano"] / 1024
+                    if size_kb > 1024:
+                        info_parts.append(f"{size_kb/1024:.1f} MB")
+                    else:
+                        info_parts.append(f"{size_kb:.0f} KB")
+                ts_str = datetime.fromtimestamp(a["ts"]).strftime("%d/%m/%Y %H:%M") if a["ts"] else ""
+                if ts_str:
+                    info_parts.append(ts_str)
+                st.caption(" | ".join(info_parts))
+
             with col2:
+                # Download button
+                audio_bytes = _load_audio_file(a["id"], a.get("formato", "wav"))
+                if audio_bytes:
+                    ext = a.get("formato", "wav")
+                    st.download_button(
+                        "Descargar",
+                        audio_bytes,
+                        file_name=f"{a['titulo']}.{ext}",
+                        mime=f"audio/{ext}",
+                        key=f"dl_{a['id']}",
+                        use_container_width=True,
+                    )
                 if confirm_delete(a["id"], a["titulo"], "audio"):
+                    _delete_audio_file(a["id"], a.get("formato", "wav"))
                     audios = audios[audios["id"] != a["id"]]
                     save_df("audios", audios)
                     st.rerun()
 
-            # Resumen
-            if a.get("resumen"):
-                st.markdown(f"**Resumen:** {a['resumen']}")
+            # Comment
+            if a.get("comentario"):
+                st.markdown(f"💬 {a['comentario']}")
 
-            # Puntos clave
-            try:
-                puntos = json.loads(a.get("puntos_clave", "[]"))
-            except (json.JSONDecodeError, TypeError):
-                puntos = []
-            if puntos:
-                st.markdown("**Puntos clave:**")
-                for p in puntos:
-                    st.markdown(f"- {p}")
+            # Play audio
+            audio_bytes = _load_audio_file(a["id"], a.get("formato", "wav"))
+            if audio_bytes:
+                st.audio(audio_bytes, format=f"audio/{a.get('formato', 'wav')}")
 
-            # Pendientes
-            try:
-                pends = json.loads(a.get("pendientes", "[]"))
-            except (json.JSONDecodeError, TypeError):
-                pends = []
-            if pends:
-                st.markdown("**Pendientes extraidos:**")
-                for p in pends:
-                    st.markdown(f"- [ ] {p}")
+            # Edit comment
+            if st.button("✏️ Editar comentario", key=f"edit_com_{a['id']}"):
+                st.session_state[f"editing_audio_{a['id']}"] = True
 
-            # Transcripcion completa
-            with st.expander("Ver transcripcion completa"):
-                st.markdown(a.get("transcript", ""))
+            if st.session_state.get(f"editing_audio_{a['id']}"):
+                with st.form(f"edit_audio_{a['id']}"):
+                    new_titulo = st.text_input("Titulo", value=a["titulo"])
+                    new_fecha = st.date_input("Fecha", value=None, key=f"ef_{a['id']}")
+                    new_comentario = st.text_area("Comentario", value=a.get("comentario", ""), key=f"ec_{a['id']}")
+                    cs, cc = st.columns(2)
+                    if cs.form_submit_button("Guardar", type="primary"):
+                        audios.loc[audios["id"] == a["id"], "titulo"] = new_titulo.strip() or a["titulo"]
+                        if new_fecha:
+                            audios.loc[audios["id"] == a["id"], "fecha"] = str(new_fecha)
+                        audios.loc[audios["id"] == a["id"], "comentario"] = new_comentario.strip()
+                        save_df("audios", audios)
+                        st.session_state[f"editing_audio_{a['id']}"] = False
+                        st.rerun()
+                    if cc.form_submit_button("Cancelar"):
+                        st.session_state[f"editing_audio_{a['id']}"] = False
+                        st.rerun()
+
+
+def _get_audio_dir():
+    """Get directory for storing audio files."""
+    import os
+    user = st.session_state.get("current_user", "default")
+    audio_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", user, "audios")
+    os.makedirs(audio_dir, exist_ok=True)
+    return audio_dir
+
+
+def _save_audio_file(audio_id, audio_bytes, ext):
+    """Save audio bytes to local file."""
+    import os
+    path = os.path.join(_get_audio_dir(), f"{audio_id}.{ext}")
+    with open(path, "wb") as f:
+        f.write(audio_bytes)
+
+
+def _load_audio_file(audio_id, ext):
+    """Load audio bytes from local file."""
+    import os
+    path = os.path.join(_get_audio_dir(), f"{audio_id}.{ext}")
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            return f.read()
+    return None
+
+
+def _delete_audio_file(audio_id, ext):
+    """Delete audio file."""
+    import os
+    path = os.path.join(_get_audio_dir(), f"{audio_id}.{ext}")
+    if os.path.exists(path):
+        os.remove(path)
