@@ -117,13 +117,13 @@ def render():
     # --- Account stats ---
     st.markdown("### Estadisticas de la cuenta")
     from core.data import get_df
-    notas = get_df("notas")
     tareas = get_df("tareas")
     proyectos = get_df("proyectos")
     habitos = get_df("habitos")
+    txs = get_df("txs")
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Notas", len(notas))
+    c1.metric("Proyectos", len(proyectos))
     c2.metric("Tareas", len(tareas))
-    c3.metric("Proyectos", len(proyectos))
-    c4.metric("Habitos", len(habitos))
+    c3.metric("Habitos", len(habitos))
+    c4.metric("Transacciones", len(txs))

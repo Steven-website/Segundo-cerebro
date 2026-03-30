@@ -5,6 +5,9 @@ from core.data import get_df, save_df, uid, now_ts
 from core.utils import confirm_delete, export_csv
 
 
+TIPO_EMOJIS = {"productividad": "🎯", "finanzas": "💰", "salud": "💪", "aprendizaje": "📚", "otro": "⭐"}
+
+
 def render():
     st.header("Metas")
     st.caption("Define objetivos semanales y mensuales y mide tu avance")
@@ -46,6 +49,22 @@ def render():
             objetivo = st.text_input("Objetivo especifico (medible)",
                                      value=existing["objetivo"] if existing is not None else "",
                                      placeholder="Ej: 5 tareas, 50000 colones, 4 sesiones...")
+
+            # Link to project for auto-progress
+            proyectos = get_df("proyectos")
+            proj_options = ["Ninguno (progreso manual)"]
+            proj_ids = [""]
+            if not proyectos.empty:
+                for _, p in proyectos.iterrows():
+                    proj_emoji = p.get("emoji", "📁")
+                    proj_options.append(f"{proj_emoji} {p['nombre']}")
+                    proj_ids.append(p["id"])
+
+            existing_proj = existing.get("proyecto_id", "") if existing is not None else ""
+            proj_default = proj_ids.index(existing_proj) if existing_proj in proj_ids else 0
+            proj_idx = st.selectbox("Vincular a proyecto (progreso automatico)", range(len(proj_options)),
+                                    format_func=lambda i: proj_options[i], index=proj_default)
+
             progreso = st.slider("Progreso actual (%)", 0, 100,
                                  value=int(existing["progreso"]) if existing is not None else 0)
 
@@ -62,6 +81,7 @@ def render():
                     "objetivo": objetivo,
                     "progreso": float(progreso),
                     "completada": progreso >= 100,
+                    "proyecto_id": proj_ids[proj_idx],
                     "ts": now_ts(),
                 }
                 if edit_id and not metas.empty:
@@ -80,7 +100,8 @@ def render():
         st.info("No hay metas definidas. Crea una con '+ Meta'.")
         return
 
-    TIPO_EMOJIS = {"productividad": "🎯", "finanzas": "💰", "salud": "💪", "aprendizaje": "📚", "otro": "⭐"}
+    # Auto-update progress for project-linked goals
+    _auto_update_progress(metas)
 
     # Separate active vs completed
     tab_active, tab_done = st.tabs(["Activas", "Completadas"])
@@ -91,7 +112,7 @@ def render():
             st.success("Todas las metas estan completadas!")
         else:
             for _, m in active.iterrows():
-                _render_meta(m, metas, TIPO_EMOJIS)
+                _render_meta(m, metas)
 
     with tab_done:
         done = metas[metas["completada"].fillna(False)]
@@ -99,35 +120,67 @@ def render():
             st.info("No hay metas completadas aun.")
         else:
             for _, m in done.iterrows():
-                _render_meta(m, metas, TIPO_EMOJIS)
+                _render_meta(m, metas)
 
 
-def _render_meta(m, metas, tipo_emojis):
+def _auto_update_progress(metas):
+    """Auto-calculate progress for goals linked to projects."""
+    tareas = get_df("tareas")
+    updated = False
+    for idx, m in metas.iterrows():
+        proj_id = m.get("proyecto_id", "")
+        if not proj_id or tareas.empty:
+            continue
+        proj_tasks = tareas[tareas["proyecto"] == proj_id]
+        if proj_tasks.empty:
+            continue
+        total = len(proj_tasks)
+        done = int(proj_tasks["done"].sum())
+        new_prog = int(done / total * 100)
+        if new_prog != int(m["progreso"]):
+            metas.loc[metas["id"] == m["id"], "progreso"] = float(new_prog)
+            metas.loc[metas["id"] == m["id"], "completada"] = new_prog >= 100
+            updated = True
+    if updated:
+        save_df("metas", metas)
+
+
+def _render_meta(m, metas):
     with st.container(border=True):
         c1, c2 = st.columns([5, 1])
         with c1:
-            emoji = tipo_emojis.get(m["tipo"], "⭐")
+            emoji = TIPO_EMOJIS.get(m["tipo"], "⭐")
             periodo_label = m.get("periodo", "").capitalize()
             st.markdown(f"### {emoji} {m['titulo']}")
-            st.caption(f"{periodo_label} | {m['tipo'].capitalize()}")
+            info_parts = [periodo_label, m['tipo'].capitalize()]
+            if m.get("proyecto_id"):
+                proyectos = get_df("proyectos")
+                if not proyectos.empty:
+                    proj_match = proyectos[proyectos["id"] == m["proyecto_id"]]
+                    if not proj_match.empty:
+                        p = proj_match.iloc[0]
+                        info_parts.append(f"📁 {p.get('emoji', '')} {p['nombre']}")
+            st.caption(" | ".join(info_parts))
             if m.get("objetivo"):
                 st.markdown(f"**Objetivo:** {m['objetivo']}")
             pct = min(m["progreso"] / 100, 1.0)
-            st.progress(pct, text=f"{int(m['progreso'])}%")
+            auto_label = " (auto)" if m.get("proyecto_id") else ""
+            st.progress(pct, text=f"{int(m['progreso'])}%{auto_label}")
         with c2:
             if st.button("✏️", key=f"meta_edit_{m['id']}"):
                 st.session_state["meta_editing"] = True
                 st.session_state["meta_edit_id"] = m["id"]
                 st.rerun()
-            # Quick progress update
-            new_prog = st.number_input("%", min_value=0, max_value=100,
-                                       value=int(m["progreso"]), key=f"meta_prog_{m['id']}",
-                                       label_visibility="collapsed")
-            if new_prog != int(m["progreso"]):
-                metas.loc[metas["id"] == m["id"], "progreso"] = float(new_prog)
-                metas.loc[metas["id"] == m["id"], "completada"] = new_prog >= 100
-                save_df("metas", metas)
-                st.rerun()
+            # Quick progress update (only for manual goals)
+            if not m.get("proyecto_id"):
+                new_prog = st.number_input("%", min_value=0, max_value=100,
+                                           value=int(m["progreso"]), key=f"meta_prog_{m['id']}",
+                                           label_visibility="collapsed")
+                if new_prog != int(m["progreso"]):
+                    metas.loc[metas["id"] == m["id"], "progreso"] = float(new_prog)
+                    metas.loc[metas["id"] == m["id"], "completada"] = new_prog >= 100
+                    save_df("metas", metas)
+                    st.rerun()
             if confirm_delete(m["id"], m["titulo"], "meta"):
                 metas = metas[metas["id"] != m["id"]]
                 save_df("metas", metas)

@@ -21,6 +21,16 @@ def render():
         _render_balance()
 
 
+def _get_month_finance(txs, year, month):
+    prefix = f"{year}-{month:02d}"
+    if txs.empty:
+        return 0, 0
+    month_txs = txs[txs["fecha"].str.startswith(prefix)]
+    inc = float(month_txs[month_txs["type"] == "ingreso"]["amt"].sum())
+    exp = float(month_txs[month_txs["type"] == "gasto"]["amt"].sum())
+    return inc, exp
+
+
 def _render_monthly():
     now = datetime.now()
     col_m, col_y = st.columns(2)
@@ -32,22 +42,43 @@ def _render_monthly():
 
     prefix = f"{year}-{month:02d}"
 
+    # Previous month for comparison
+    prev_m = month - 1
+    prev_y = year
+    if prev_m <= 0:
+        prev_m += 12
+        prev_y -= 1
+
     # --- Finance ---
     st.subheader("Finanzas del mes")
     txs = get_df("txs")
+
+    ingresos, gastos = _get_month_finance(txs, year, month)
+    prev_inc, prev_exp = _get_month_finance(txs, prev_y, prev_m)
+    balance = ingresos - gastos
+
+    c1, c2, c3 = st.columns(3)
+
+    inc_delta = None
+    if prev_inc > 0:
+        inc_delta = f"{int((ingresos - prev_inc) / prev_inc * 100):+d}% vs anterior"
+    c1.metric("Ingresos", fmt(ingresos), delta=inc_delta)
+
+    exp_delta = None
+    if prev_exp > 0:
+        exp_delta = f"{int((gastos - prev_exp) / prev_exp * 100):+d}% vs anterior"
+    c2.metric("Gastos", fmt(gastos), delta=exp_delta, delta_color="inverse")
+
+    bal_color = "normal" if balance >= 0 else "inverse"
+    prev_bal = prev_inc - prev_exp
+    bal_delta = None
+    if prev_bal != 0:
+        bal_delta = f"{fmt(balance - prev_bal)} vs anterior"
+    c3.metric("Balance", fmt(balance), delta=bal_delta, delta_color=bal_color)
+
+    # By category
     if not txs.empty:
         month_txs = txs[txs["fecha"].str.startswith(prefix)]
-        ingresos = float(month_txs[month_txs["type"] == "ingreso"]["amt"].sum())
-        gastos = float(month_txs[month_txs["type"] == "gasto"]["amt"].sum())
-        balance = ingresos - gastos
-
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Ingresos", fmt(ingresos))
-        c2.metric("Gastos", fmt(gastos))
-        bal_color = "normal" if balance >= 0 else "inverse"
-        c3.metric("Balance", fmt(balance), delta=f"{'+' if balance >= 0 else ''}{fmt(balance)}", delta_color=bal_color)
-
-        # By category
         if not month_txs.empty:
             gastos_df = month_txs[month_txs["type"] == "gasto"]
             if not gastos_df.empty:
@@ -55,8 +86,23 @@ def _render_monthly():
                 cat_grouped.columns = ["Categoria", "Monto"]
                 cat_grouped["Categoria"] = cat_grouped["Categoria"].str.capitalize()
                 st.bar_chart(cat_grouped.set_index("Categoria"), color=["#c96a6a"])
-    else:
-        st.info("No hay transacciones.")
+
+                # Category comparison vs previous month
+                prev_prefix = f"{prev_y}-{prev_m:02d}"
+                prev_month_txs = txs[txs["fecha"].str.startswith(prev_prefix)]
+                prev_gastos_df = prev_month_txs[prev_month_txs["type"] == "gasto"] if not prev_month_txs.empty else pd.DataFrame()
+
+                if not prev_gastos_df.empty:
+                    with st.expander("Comparacion por categoria vs mes anterior"):
+                        for _, row in cat_grouped.iterrows():
+                            cat_name = row["Categoria"].lower()
+                            current_amt = row["Monto"]
+                            prev_amt = float(prev_gastos_df[prev_gastos_df["cat"] == cat_name]["amt"].sum())
+                            if prev_amt > 0:
+                                change = int((current_amt - prev_amt) / prev_amt * 100)
+                                icon = CAT_ICONS.get(cat_name, "")
+                                arrow = "🔺" if change > 0 else "🔽" if change < 0 else "➡️"
+                                st.markdown(f"{icon} **{row['Categoria']}**: {fmt(current_amt)} {arrow} {change:+d}% (antes: {fmt(prev_amt)})")
 
     st.divider()
 
@@ -68,16 +114,26 @@ def _render_monthly():
         total = len(month_tasks)
         done = int(month_tasks["done"].sum()) if total > 0 else 0
 
+        # Previous month comparison
+        prev_prefix = f"{prev_y}-{prev_m:02d}"
+        prev_tasks = tareas[tareas["fecha"].str.startswith(prev_prefix)]
+        prev_total = len(prev_tasks)
+        prev_done = int(prev_tasks["done"].sum()) if prev_total > 0 else 0
+
         c1, c2, c3 = st.columns(3)
-        c1.metric("Tareas del mes", total)
-        c2.metric("Completadas", done)
-        c3.metric("Tasa de completitud", f"{int(done/total*100)}%" if total > 0 else "N/A")
+        task_delta = f"{total - prev_total:+d} vs anterior" if prev_total > 0 else None
+        c1.metric("Tareas del mes", total, delta=task_delta)
+        done_delta = f"{done - prev_done:+d} vs anterior" if prev_done > 0 else None
+        c2.metric("Completadas", done, delta=done_delta)
+        rate = int(done / total * 100) if total > 0 else 0
+        prev_rate = int(prev_done / prev_total * 100) if prev_total > 0 else 0
+        rate_delta = f"{rate - prev_rate:+d}pp vs anterior" if prev_total > 0 else None
+        c3.metric("Tasa de completitud", f"{rate}%", delta=rate_delta)
 
     # --- Habits ---
     habitos = get_df("habitos")
     if not habitos.empty:
         st.subheader("Habitos del mes")
-        days_in_month = 31
         habit_stats = []
         for _, h in habitos.iterrows():
             checks = parse_checks(h.get("checks", "{}"))
@@ -95,9 +151,23 @@ def _render_monthly():
             st.subheader("Pomodoro del mes")
             total_sessions = len(month_pomo)
             total_min = int(month_pomo["minutos"].sum())
-            c1, c2 = st.columns(2)
-            c1.metric("Sesiones", total_sessions)
-            c2.metric("Minutos enfocados", total_min)
+
+            # Top tasks by time
+            if "tarea" in month_pomo.columns:
+                task_time = month_pomo[month_pomo["tarea"] != ""].groupby("tarea")["minutos"].sum().sort_values(ascending=False)
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Sesiones", total_sessions)
+                c2.metric("Minutos enfocados", total_min)
+                c3.metric("Horas totales", f"{total_min / 60:.1f}h")
+
+                if not task_time.empty:
+                    st.caption("Tiempo por tarea:")
+                    for task, mins in task_time.head(5).items():
+                        st.markdown(f"- **{task}**: {int(mins)} min ({mins/60:.1f}h)")
+            else:
+                c1, c2 = st.columns(2)
+                c1.metric("Sesiones", total_sessions)
+                c2.metric("Minutos enfocados", total_min)
 
     # --- PDF Export ---
     _pdf_export_button(f"reporte_{prefix}")

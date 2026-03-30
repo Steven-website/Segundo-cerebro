@@ -38,6 +38,60 @@ def _get_month_finance(txs_df, year=None, month=None):
 def render():
     st.header("Dashboard")
 
+    tareas = get_df("tareas")
+    habitos = get_df("habitos")
+    txs = get_df("txs")
+    proyectos = get_df("proyectos")
+    debts = get_df("debts")
+
+    # ═══ NEEDS ATTENTION ═══
+    alerts = []
+    today_str = datetime.now().strftime("%Y-%m-%d")
+
+    # Overdue tasks
+    if not tareas.empty:
+        overdue = tareas[(~tareas["done"]) & (tareas["fecha"] != "") & (tareas["fecha"] < today_str)]
+        if not overdue.empty:
+            alerts.append(("warning", f"⚠️ {len(overdue)} tarea(s) vencida(s)", "Revisa tus proyectos"))
+
+    # Habits not done today
+    today_habs = _get_today_habits(habitos)
+    if not today_habs.empty:
+        not_done = sum(1 for _, h in today_habs.iterrows() if not is_done_today(h))
+        if not_done > 0:
+            alerts.append(("info", f"⬜ {not_done} habito(s) pendiente(s) hoy", "Ve a Habitos"))
+
+    # Overdue debts
+    if not debts.empty:
+        for _, d in debts.iterrows():
+            if d.get("due") and d["due"] <= today_str and d["paid"] < d["total"]:
+                remaining = d["total"] - d["paid"]
+                alerts.append(("error", f"🔴 Deuda vencida: {d['name']}", f"Pendiente: {fmt(remaining)}"))
+
+    # Budget exceeded
+    budget_df = get_df("budget")
+    from core.constants import BUDGET_DEFAULT
+    budget = dict(zip(budget_df["cat"], budget_df["amt"])) if not budget_df.empty else BUDGET_DEFAULT.copy()
+    month_txs = txs[txs["fecha"].str.startswith(today_str[:7])] if not txs.empty else pd.DataFrame()
+    for cat, limit in budget.items():
+        if cat == "ingreso" or limit <= 0:
+            continue
+        spent = float(month_txs[(month_txs["type"] == "gasto") & (month_txs["cat"] == cat)]["amt"].sum()) if not month_txs.empty else 0
+        if spent > limit:
+            alerts.append(("error", f"💸 {cat.capitalize()}: excede presupuesto", f"{fmt(spent)} / {fmt(limit)}"))
+
+    if alerts:
+        st.subheader("Necesita atencion")
+        for alert_type, msg, detail in alerts:
+            with st.container(border=True):
+                if alert_type == "error":
+                    st.error(f"{msg} — {detail}")
+                elif alert_type == "warning":
+                    st.warning(f"{msg} — {detail}")
+                else:
+                    st.info(f"{msg} — {detail}")
+        st.divider()
+
     # --- Widget config ---
     with st.expander("Personalizar widgets"):
         st.caption("Elige que secciones mostrar en tu dashboard")
@@ -53,11 +107,6 @@ def render():
         show_metas = st.checkbox("Metas activas", value=st.session_state.get("dash_metas", True), key="dash_metas")
         show_pomo = st.checkbox("Pomodoro de hoy", value=st.session_state.get("dash_pomo", True), key="dash_pomo")
 
-    tareas = get_df("tareas")
-    habitos = get_df("habitos")
-    txs = get_df("txs")
-    proyectos = get_df("proyectos")
-
     # --- Metrics ---
     if show_metrics:
         pending = tareas[~tareas["done"]].shape[0] if not tareas.empty else 0
@@ -68,8 +117,7 @@ def render():
         balance = inc - exp
 
         c1, c2, c3, c4 = st.columns(4)
-        proyectos_df = get_df("proyectos")
-        c1.metric("Proyectos", len(proyectos_df))
+        c1.metric("Proyectos", len(proyectos))
         c2.metric("Tareas pendientes", pending, help=f"{completed} completadas")
         c3.metric("Habitos hoy", f"{habs_done}/{len(today_habs)}")
         c4.metric("Balance del mes", fmt(balance), delta=f"{fmt(inc)} ingresos" if inc > 0 else None)
@@ -121,7 +169,6 @@ def render():
 
     # --- Charts row 2 ---
     savings = get_df("savings")
-    debts = get_df("debts")
     inventario = get_df("inventario")
 
     col_chart3, col_chart4 = st.columns(2)
@@ -156,7 +203,6 @@ def render():
     if show_pomo:
         pomo_sessions = get_df("pomo_sessions")
         if not pomo_sessions.empty:
-            today_str = datetime.now().strftime("%Y-%m-%d")
             today_pomo = pomo_sessions[pomo_sessions["fecha"] == today_str]
             if not today_pomo.empty:
                 st.subheader("Pomodoro hoy")

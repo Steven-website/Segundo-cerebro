@@ -71,8 +71,31 @@ def render():
                 with c1:
                     st.markdown(f"**{s['name']}**")
                     st.progress(pct, text=f"{fmt(s['current'])} / {fmt(s['goal'])} ({int(pct*100)}%)")
+                    info_parts = []
                     if s.get("date"):
-                        st.caption(f"Meta: {s['date']}")
+                        info_parts.append(f"Meta: {s['date']}")
+                    # Projection
+                    remaining = s["goal"] - s["current"]
+                    if remaining > 0:
+                        payments = get_df("debt_payments")  # reuse for savings tracking
+                        # Estimate based on average monthly deposit
+                        from datetime import datetime, timedelta
+                        all_payments = payments[payments.get("debt_id", pd.Series(dtype=str)).str.startswith("sav_")] if not payments.empty else pd.DataFrame()
+                        # Simple projection: if they save at current pace
+                        if s["current"] > 0 and s.get("date"):
+                            try:
+                                target = datetime.strptime(s["date"], "%Y-%m-%d")
+                                days_left = (target - datetime.now()).days
+                                if days_left > 0:
+                                    daily_needed = remaining / days_left
+                                    monthly_needed = daily_needed * 30
+                                    info_parts.append(f"Necesitas {fmt(monthly_needed)}/mes")
+                            except (ValueError, TypeError):
+                                pass
+                        elif s["current"] > 0:
+                            info_parts.append(f"Faltan {fmt(remaining)}")
+                    if info_parts:
+                        st.caption(" | ".join(info_parts))
                 with c2:
                     amount = st.number_input("Abonar", min_value=0.0, step=1000.0, key=f"sav_amt_{s['id']}", label_visibility="collapsed")
                     if st.button("Abonar", key=f"sav_add_{s['id']}", use_container_width=True):

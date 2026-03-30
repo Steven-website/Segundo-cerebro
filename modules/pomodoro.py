@@ -3,7 +3,7 @@ import pandas as pd
 import time as time_module
 from datetime import datetime, timedelta
 from core.data import get_df, save_df, uid, now_ts
-from core.constants import AREA_LABELS
+from core.constants import AREA_LABELS, fmt
 from core.utils import PRIORITY_EMOJIS
 
 
@@ -139,6 +139,24 @@ def render():
 
     chart_df = pd.DataFrame(days_data)
     st.bar_chart(chart_df.set_index("Dia"), color=["#c96a6a"])
+
+    # --- Time per task ---
+    st.subheader("Tiempo por tarea")
+    task_sessions = pomo_sessions[pomo_sessions["tarea"] != ""]
+    if not task_sessions.empty:
+        task_time = task_sessions.groupby("tarea")["minutos"].agg(["sum", "count"]).reset_index()
+        task_time.columns = ["Tarea", "Minutos", "Sesiones"]
+        task_time = task_time.sort_values("Minutos", ascending=False)
+
+        for _, row in task_time.head(10).iterrows():
+            hours = row["Minutos"] / 60
+            with st.container(border=True):
+                ct1, ct2, ct3 = st.columns([4, 1, 1])
+                ct1.markdown(f"**{row['Tarea']}**")
+                ct2.metric("Tiempo", f"{hours:.1f}h", label_visibility="collapsed")
+                ct3.caption(f"{int(row['Sesiones'])} ses. | {int(row['Minutos'])} min")
+    else:
+        st.caption("Selecciona una tarea al iniciar un pomodoro para ver el tiempo por tarea.")
 
     # Recent sessions table
     with st.expander("Sesiones recientes"):

@@ -20,7 +20,7 @@ SCHEMAS = {
     "pomo_sessions": {"id": str, "tarea": str, "minutos": int, "fecha": str, "ts": float},
     "task_comments": {"id": str, "tarea_id": str, "texto": str, "autor": str, "ts": float},
     "debt_payments": {"id": str, "debt_id": str, "monto": float, "fecha": str, "nota": str, "ts": float},
-    "metas": {"id": str, "titulo": str, "tipo": str, "periodo": str, "objetivo": str, "progreso": float, "completada": bool, "ts": float},
+    "metas": {"id": str, "titulo": str, "tipo": str, "periodo": str, "objetivo": str, "progreso": float, "completada": bool, "proyecto_id": str, "ts": float},
     "budget": {"cat": str, "amt": float},
 }
 

@@ -84,7 +84,6 @@ PAGES = [
     "📌 Hoy",
     "🔍 Buscar",
     "◈ Proyectos",
-    "◷ Tareas",
     "🎯 Metas",
     "₡ Finanzas",
     "◎ Ahorros & Deudas",
@@ -148,8 +147,6 @@ elif page == "📌 Hoy":
     from modules.hoy import render
 elif page == "🔍 Buscar":
     from modules.buscar import render
-elif page == "◷ Tareas":
-    from modules.tareas import render
 elif page == "◈ Proyectos":
     from modules.proyectos import render
 elif page == "🎯 Metas":
