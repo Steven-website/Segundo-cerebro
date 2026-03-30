@@ -227,34 +227,61 @@ def _render_today_habits():
     if not today_habs:
         return
 
-    done_count = 0
-    for h in today_habs:
-        checks = parse_checks(h.get("checks", "{}"))
-        if checks.get(today_str, False):
-            done_count += 1
+    from core.utils import is_done_today, get_day_completion
 
+    done_count = sum(1 for h in today_habs if is_done_today(h))
     st.subheader(f"Habitos de hoy ({done_count}/{len(today_habs)})")
 
     for h in today_habs:
         checks = parse_checks(h.get("checks", "{}"))
-        done_today = checks.get(today_str, False)
+        reps = [r.strip() for r in h.get("repeticiones", "").split(",") if r.strip()]
+        done_today = is_done_today(h)
         emoji = h.get("emoji", "⭐")
 
         with st.container(border=True):
-            col_c, col_n = st.columns([0.5, 5.5])
-            with col_c:
-                new_done = st.checkbox("", value=done_today, key=f"hoy_hab_{h['id']}", label_visibility="collapsed")
-                if new_done != done_today:
-                    import time as _time
-                    checks[today_str] = new_done
-                    habitos.loc[habitos["id"] == h["id"], "checks"] = _json.dumps(checks)
-                    _save_df("habitos", habitos)
-                    if new_done:
-                        st.session_state["undo_action"] = {"tipo": "habit_done", "id": h["id"], "fecha": today_str, "msg": f"Habito completado: {h['name']}", "ts": _time.time()}
-                    st.rerun()
-            with col_n:
-                status = "~~" if done_today else ""
-                st.markdown(f"{emoji} {status}**{h['name']}**{status}")
+            if reps:
+                # Sub-checks mode
+                today_val = checks.get(today_str, {})
+                if not isinstance(today_val, dict):
+                    today_val = {r: bool(today_val) for r in reps}
+                d_count, t_count = get_day_completion(h, today_str)
+                pct = int(d_count / t_count * 100) if t_count > 0 else 0
+
+                col_n, col_pct = st.columns([4, 1])
+                with col_n:
+                    status = "~~" if done_today else ""
+                    st.markdown(f"{emoji} {status}**{h['name']}**{status} — {d_count}/{t_count}")
+                with col_pct:
+                    st.caption(f"{pct}%")
+
+                rep_cols = st.columns(len(reps))
+                for ri, rep in enumerate(reps):
+                    with rep_cols[ri]:
+                        rep_done = today_val.get(rep, False)
+                        new_val = st.checkbox(rep.capitalize(), value=rep_done, key=f"hoy_hrep_{h['id']}_{ri}")
+                        if new_val != rep_done:
+                            import time as _time
+                            today_val[rep] = new_val
+                            checks[today_str] = today_val
+                            habitos.loc[habitos["id"] == h["id"], "checks"] = _json.dumps(checks)
+                            _save_df("habitos", habitos)
+                            st.rerun()
+            else:
+                # Simple mode
+                col_c, col_n = st.columns([0.5, 5.5])
+                with col_c:
+                    new_done = st.checkbox("", value=done_today, key=f"hoy_hab_{h['id']}", label_visibility="collapsed")
+                    if new_done != done_today:
+                        import time as _time
+                        checks[today_str] = new_done
+                        habitos.loc[habitos["id"] == h["id"], "checks"] = _json.dumps(checks)
+                        _save_df("habitos", habitos)
+                        if new_done:
+                            st.session_state["undo_action"] = {"tipo": "habit_done", "id": h["id"], "fecha": today_str, "msg": f"Habito completado: {h['name']}", "ts": _time.time()}
+                        st.rerun()
+                with col_n:
+                    status = "~~" if done_today else ""
+                    st.markdown(f"{emoji} {status}**{h['name']}**{status}")
 
 
 def _render_today_task(t, tareas, proyectos, overdue=False):
