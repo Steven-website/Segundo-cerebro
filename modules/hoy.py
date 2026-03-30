@@ -26,9 +26,61 @@ def _parse_subtareas(subtareas_str):
     return result
 
 
+def _check_undo():
+    """Show undo banner if a recent action can be reverted."""
+    import time
+    undo = st.session_state.get("undo_action")
+    if not undo:
+        return
+    # Auto-expire after 8 seconds
+    if time.time() - undo.get("ts", 0) > 8:
+        st.session_state["undo_action"] = None
+        return
+
+    with st.container(border=True):
+        col_msg, col_btn = st.columns([5, 1])
+        with col_msg:
+            st.success(f"✅ {undo['msg']}")
+        with col_btn:
+            if st.button("Deshacer", type="primary", use_container_width=True):
+                _execute_undo(undo)
+                st.session_state["undo_action"] = None
+                st.rerun()
+
+
+def _execute_undo(undo):
+    """Revert the last action."""
+    tipo = undo.get("tipo")
+    if tipo == "task_done":
+        tareas = get_df("tareas")
+        tareas.loc[tareas["id"] == undo["id"], "done"] = False
+        save_df("tareas", tareas)
+    elif tipo == "subtask_done":
+        tareas = get_df("tareas")
+        task_row = tareas[tareas["id"] == undo["tarea_id"]]
+        if not task_row.empty:
+            subs = _parse_subtareas(task_row.iloc[0].get("subtareas", ""))
+            idx = undo["sub_index"]
+            if idx < len(subs):
+                subs[idx]["done"] = False
+                tareas.loc[tareas["id"] == undo["tarea_id"], "subtareas"] = json.dumps(subs, ensure_ascii=False)
+                save_df("tareas", tareas)
+    elif tipo == "habit_done":
+        from core.utils import parse_checks
+        habitos = get_df("habitos")
+        h_row = habitos[habitos["id"] == undo["id"]]
+        if not h_row.empty:
+            checks = parse_checks(h_row.iloc[0].get("checks", "{}"))
+            checks[undo["fecha"]] = False
+            habitos.loc[habitos["id"] == undo["id"], "checks"] = json.dumps(checks)
+            save_df("habitos", habitos)
+
+
 def render():
     st.header("Hoy")
     st.caption("Todo lo que tienes pendiente para hoy")
+
+    _check_undo()
 
     today = datetime.now().strftime("%Y-%m-%d")
     tareas = get_df("tareas")
@@ -179,9 +231,12 @@ def _render_today_habits():
             with col_c:
                 new_done = st.checkbox("", value=done_today, key=f"hoy_hab_{h['id']}", label_visibility="collapsed")
                 if new_done != done_today:
+                    import time as _time
                     checks[today_str] = new_done
                     habitos.loc[habitos["id"] == h["id"], "checks"] = _json.dumps(checks)
                     _save_df("habitos", habitos)
+                    if new_done:
+                        st.session_state["undo_action"] = {"tipo": "habit_done", "id": h["id"], "fecha": today_str, "msg": f"Habito completado: {h['name']}", "ts": _time.time()}
                     st.rerun()
             with col_n:
                 status = "~~" if done_today else ""
@@ -201,8 +256,10 @@ def _render_today_task(t, tareas, proyectos, overdue=False):
         col_check, col_body = st.columns([0.5, 5.5])
         with col_check:
             if st.checkbox("", value=False, key=f"today_tc_{t['id']}", label_visibility="collapsed"):
+                import time as _time
                 tareas.loc[tareas["id"] == t["id"], "done"] = True
                 save_df("tareas", tareas)
+                st.session_state["undo_action"] = {"tipo": "task_done", "id": t["id"], "msg": f"Tarea completada: {t['titulo']}", "ts": _time.time()}
                 st.rerun()
         with col_body:
             overdue_tag = " `ATRASADA`" if overdue else ""
@@ -229,7 +286,7 @@ def _render_today_subtask(sub, tareas):
         col_check, col_body = st.columns([0.5, 5.5])
         with col_check:
             if st.checkbox("", value=False, key=f"today_sub_{sub['tarea_id']}_{sub['sub_index']}", label_visibility="collapsed"):
-                # Mark subtask as done
+                import time as _time
                 task_row = tareas[tareas["id"] == sub["tarea_id"]]
                 if not task_row.empty:
                     subs = _parse_subtareas(task_row.iloc[0].get("subtareas", ""))
@@ -237,6 +294,7 @@ def _render_today_subtask(sub, tareas):
                         subs[sub["sub_index"]]["done"] = True
                         tareas.loc[tareas["id"] == sub["tarea_id"], "subtareas"] = json.dumps(subs, ensure_ascii=False)
                         save_df("tareas", tareas)
+                        st.session_state["undo_action"] = {"tipo": "subtask_done", "tarea_id": sub["tarea_id"], "sub_index": sub["sub_index"], "msg": f"Subtarea completada: {sub['sub_text']}", "ts": _time.time()}
                         st.rerun()
         with col_body:
             st.markdown(f"↳ **{sub['sub_text']}**{overdue_tag}")
