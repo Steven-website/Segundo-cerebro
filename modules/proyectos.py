@@ -61,6 +61,9 @@ TEMPLATES = {
 }
 
 
+ETIQUETAS = {"": "Sin etiqueta", "urgente": "🔴 Urgente", "bug": "🐛 Bug", "idea": "💡 Idea", "reunion": "📞 Reunion", "personal": "🏠 Personal"}
+
+
 def render():
     st.header("Proyectos")
 
@@ -84,10 +87,12 @@ def render():
             return
 
     # --- Toolbar ---
-    col_tmpl, col_export, col_add = st.columns([2, 1, 1])
+    col_tmpl, col_view, col_export, col_add = st.columns([2, 1, 1, 1])
     with col_tmpl:
-        if st.button("📋 Usar plantilla", use_container_width=True):
+        if st.button("📋 Plantilla", use_container_width=True):
             st.session_state["show_templates"] = True
+    with col_view:
+        view_mode = st.selectbox("Vista", ["Lista", "Kanban"], key="proj_view_mode", label_visibility="collapsed")
     with col_export:
         export_csv(proyectos, "proyectos.csv", "CSV")
     with col_add:
@@ -125,7 +130,41 @@ def render():
         st.info("No hay proyectos. Crea uno con '+ Proyecto' o usa una plantilla.")
         return
 
-    # Filter by status
+    if view_mode == "Kanban":
+        _render_projects_kanban(proyectos, tareas)
+    else:
+        _render_projects_list(proyectos, tareas)
+
+
+def _render_projects_kanban(proyectos, tareas):
+    """Kanban board for projects grouped by status."""
+    kanban_states = [("activo", "🟢 Activos"), ("pausado", "🟡 Pausados"), ("completado", "✅ Completados"), ("cancelado", "🔴 Cancelados")]
+    cols = st.columns(len(kanban_states))
+    for col, (estado, label) in zip(cols, kanban_states):
+        with col:
+            st.markdown(f"**{label}**")
+            if estado == "activo":
+                group = proyectos[(proyectos["estado"].isin(["activo", ""])) | (proyectos["estado"].isna())]
+            else:
+                group = proyectos[proyectos["estado"] == estado]
+            if group.empty:
+                st.caption("—")
+            for _, p in group.iterrows():
+                proj_tasks = tareas[tareas["proyecto"] == p["id"]] if not tareas.empty else pd.DataFrame()
+                total = len(proj_tasks)
+                done = int(proj_tasks["done"].sum()) if total > 0 else 0
+                pct = int(done / total * 100) if total > 0 else 0
+                with st.container(border=True):
+                    st.markdown(f"{p.get('emoji', '📁')} **{p['nombre']}**")
+                    if total > 0:
+                        st.progress(pct / 100, text=f"{done}/{total}")
+                    if st.button("Abrir", key=f"kb_{p['id']}", use_container_width=True):
+                        st.session_state["proj_viewing"] = p["id"]
+                        st.rerun()
+
+
+def _render_projects_list(proyectos, tareas):
+    """Traditional list view for projects."""
     status_filter = st.selectbox("Filtrar", ["Todos", "Activos", "Pausados", "Completados"],
                                   label_visibility="collapsed", key="proj_status_f")
 
@@ -168,13 +207,17 @@ def render():
                 if st.button("📂 Abrir", key=f"pview_{p['id']}", use_container_width=True, type="primary"):
                     st.session_state["proj_viewing"] = p["id"]
                     st.rerun()
-                c1, c2 = st.columns(2)
+                c1, c2, c3 = st.columns(3)
                 with c1:
                     if st.button("✏️", key=f"pedit_{p['id']}", use_container_width=True):
                         st.session_state["proj_editing"] = True
                         st.session_state["proj_edit_id"] = p["id"]
                         st.rerun()
                 with c2:
+                    if st.button("📋", key=f"pdup_{p['id']}", use_container_width=True, help="Duplicar"):
+                        _duplicate_project(p, proyectos, tareas)
+                        st.rerun()
+                with c3:
                     if confirm_delete(p["id"], p["nombre"], "proj"):
                         proyectos = proyectos[proyectos["id"] != p["id"]]
                         save_df("proyectos", proyectos)
@@ -229,9 +272,13 @@ def _render_project_detail(project, proyectos, tareas):
 
     st.divider()
 
-    # --- ADD TASK ---
-    if st.button("+ Tarea", type="primary", key="add_proj_task"):
-        st.session_state["proj_task_adding"] = True
+    # --- ADD TASK + VIEW TOGGLE ---
+    col_add_t, col_view_t = st.columns([2, 1])
+    with col_add_t:
+        if st.button("+ Tarea", type="primary", key="add_proj_task"):
+            st.session_state["proj_task_adding"] = True
+    with col_view_t:
+        task_view = st.selectbox("Vista", ["Lista", "Kanban"], key="task_view_mode", label_visibility="collapsed")
 
     if st.session_state.get("proj_task_adding"):
         with st.form("proj_task_form", clear_on_submit=True):
@@ -243,6 +290,8 @@ def _render_project_detail(project, proyectos, tareas):
                                      format_func=lambda x: PRIORITY_LABELS.get(x, x))
             fecha_inicio = c2.date_input("Fecha inicio", value=None)
             fecha_fin = c3.date_input("Fecha limite", value=None)
+            etiqueta_opts = list(ETIQUETAS.keys())
+            etiqueta = c1.selectbox("Etiqueta", etiqueta_opts, format_func=lambda x: ETIQUETAS.get(x, x), key="new_task_tag")
             notas_txt = st.text_area("Descripcion", height=60)
             subtareas_txt = st.text_area("Subtareas (una por linea)", height=60,
                                          help="Escribe una subtarea por linea")
@@ -252,7 +301,6 @@ def _render_project_detail(project, proyectos, tareas):
             cancelled = col_c.form_submit_button("Cancelar")
 
             if submitted and titulo.strip():
-                # Convert plain text subtasks to JSON format
                 sub_lines = [l.strip() for l in subtareas_txt.split("\n") if l.strip()] if subtareas_txt else []
                 subs_json = _save_subtareas([{"text": l, "fecha": "", "done": False} for l in sub_lines]) if sub_lines else ""
                 new_task = {
@@ -261,8 +309,8 @@ def _render_project_detail(project, proyectos, tareas):
                     "fecha_inicio": str(fecha_inicio) if fecha_inicio else "",
                     "fecha": str(fecha_fin) if fecha_fin else "",
                     "proyecto": proj_id, "notas": notas_txt, "subtareas": subs_json,
-                    "recurrente": "", "depende_de": "", "done": False,
-                    "pinned": False, "archived": False, "ts": now_ts(),
+                    "recurrente": "", "depende_de": "", "etiqueta": etiqueta,
+                    "done": False, "pinned": False, "archived": False, "ts": now_ts(),
                 }
                 tareas = pd.concat([pd.DataFrame([new_task]), tareas], ignore_index=True)
                 save_df("tareas", tareas)
@@ -277,20 +325,66 @@ def _render_project_detail(project, proyectos, tareas):
         st.info("No hay tareas en este proyecto. Crea una con '+ Tarea'.")
         return
 
+    if task_view == "Kanban":
+        _render_tasks_kanban(proj_tasks, tareas)
+    else:
+        _render_tasks_list(proj_tasks, tareas)
+
+
+def _get_task_status(t, subs=None):
+    """Determine task kanban status: pendiente / en_progreso / completada."""
+    if t["done"]:
+        return "completada"
+    if subs is None:
+        subs = _parse_subtareas(t.get("subtareas", ""))
+    if subs and any(s.get("done") for s in subs) and not all(s.get("done") for s in subs):
+        return "en_progreso"
+    return "pendiente"
+
+
+def _render_tasks_kanban(proj_tasks, tareas):
+    """Kanban board: Pendiente | En progreso | Completada."""
+    kanban_cols = [("pendiente", "⬜ Pendiente"), ("en_progreso", "🔄 En progreso"), ("completada", "✅ Completada")]
+    cols = st.columns(3)
+    for col, (status, label) in zip(cols, kanban_cols):
+        with col:
+            st.markdown(f"**{label}**")
+            for _, t in proj_tasks.iterrows():
+                if _get_task_status(t) != status:
+                    continue
+                pri_emoji = PRIORITY_EMOJIS.get(t["prioridad"], "")
+                subs = _parse_subtareas(t.get("subtareas", ""))
+                sub_done = sum(1 for s in subs if s.get("done"))
+                tag = t.get("etiqueta", "")
+                with st.container(border=True):
+                    st.markdown(f"{pri_emoji} **{t['titulo']}**")
+                    info = []
+                    if t.get("fecha"):
+                        info.append(f"📅 {t['fecha']}")
+                    if subs:
+                        info.append(f"☑️ {sub_done}/{len(subs)}")
+                    if tag:
+                        info.append(ETIQUETAS.get(tag, tag))
+                    if info:
+                        st.caption(" | ".join(info))
+                    if st.button("Abrir", key=f"kb_t_{t['id']}", use_container_width=True):
+                        st.session_state["task_detail_id"] = t["id"]
+                        st.rerun()
+
+
+def _render_tasks_list(proj_tasks, tareas):
+    """Traditional list view for tasks."""
     pending = proj_tasks[~proj_tasks["done"]].copy()
     done_df = proj_tasks[proj_tasks["done"]].copy()
 
-    # Sort by priority
     pri_order = {"alta": 0, "media": 1, "baja": 2}
     if not pending.empty:
         pending["_pri"] = pending["prioridad"].map(pri_order).fillna(2)
         pending = pending.sort_values("_pri")
 
-    # Pending tasks
     for _, t in pending.iterrows():
         _render_task_row(t, tareas, show_detail=True)
 
-    # Completed tasks
     if not done_df.empty:
         with st.expander(f"✅ Completadas ({len(done_df)})"):
             for _, t in done_df.iterrows():
@@ -330,6 +424,9 @@ def _render_task_row(t, tareas, show_detail=True):
                 info.append(f"☑️ {sub_done}/{sub_count}")
             if comment_count > 0:
                 info.append(f"💬 {comment_count}")
+            tag = t.get("etiqueta", "")
+            if tag:
+                info.append(ETIQUETAS.get(tag, tag))
             if info:
                 st.caption(" | ".join(info))
         with col_actions:
@@ -337,6 +434,13 @@ def _render_task_row(t, tareas, show_detail=True):
                 if st.button("Abrir", key=f"td_{t['id']}", use_container_width=True):
                     st.session_state["task_detail_id"] = t["id"]
                     st.rerun()
+            ca, cb = st.columns(2)
+            with ca:
+                if st.button("📋", key=f"tdup_{t['id']}", help="Duplicar"):
+                    _duplicate_task(t, tareas)
+                    st.rerun()
+            with cb:
+                pass
             if confirm_delete(t["id"], t["titulo"], "ptask"):
                 tareas = tareas[tareas["id"] != t["id"]]
                 save_df("tareas", tareas)
@@ -484,6 +588,13 @@ def _render_task_edit_form(task, tareas, proyectos):
         fecha_inicio = c3.date_input("Fecha inicio", value=None)
         fecha_fin = c4.date_input("Fecha limite", value=None)
 
+        etiqueta_opts = list(ETIQUETAS.keys())
+        current_tag = task.get("etiqueta", "") or ""
+        etiqueta = st.selectbox("Etiqueta", etiqueta_opts,
+                                format_func=lambda x: ETIQUETAS.get(x, x),
+                                index=etiqueta_opts.index(current_tag) if current_tag in etiqueta_opts else 0,
+                                key="edit_task_tag")
+
         notas_txt = st.text_area("Descripcion", value=task.get("notas", ""), height=80)
 
         # Show subtasks as editable text (one per line)
@@ -513,6 +624,7 @@ def _render_task_edit_form(task, tareas, proyectos):
             tareas.loc[tareas["id"] == task["id"], "fecha_inicio"] = str(fecha_inicio) if fecha_inicio else ""
             tareas.loc[tareas["id"] == task["id"], "fecha"] = str(fecha_fin) if fecha_fin else ""
             tareas.loc[tareas["id"] == task["id"], "notas"] = notas_txt
+            tareas.loc[tareas["id"] == task["id"], "etiqueta"] = etiqueta
             tareas.loc[tareas["id"] == task["id"], "subtareas"] = _save_subtareas(merged_subs) if merged_subs else ""
             save_df("tareas", tareas)
             st.session_state["task_detail_editing"] = False
@@ -604,3 +716,49 @@ def _create_from_template(template_name, template, proyectos, tareas):
     if new_tasks:
         tareas = pd.concat([pd.DataFrame(new_tasks), tareas], ignore_index=True)
         save_df("tareas", tareas)
+
+
+def _duplicate_project(project, proyectos, tareas):
+    """Duplicate a project with all its tasks."""
+    new_proj_id = uid()
+    new_proj = {
+        "id": new_proj_id, "nombre": f"{project['nombre']} (copia)",
+        "area": project["area"], "emoji": project.get("emoji", "📁"),
+        "desc": project.get("desc", ""), "estado": "activo",
+        "fecha_inicio": "", "fecha_fin": "",
+        "plantilla": False, "compartido": "", "ts": now_ts(),
+    }
+    proyectos = pd.concat([pd.DataFrame([new_proj]), proyectos], ignore_index=True)
+    save_df("proyectos", proyectos)
+
+    # Duplicate tasks
+    proj_tasks = tareas[tareas["proyecto"] == project["id"]] if not tareas.empty else pd.DataFrame()
+    if not proj_tasks.empty:
+        new_tasks = []
+        for _, t in proj_tasks.iterrows():
+            new_tasks.append({
+                "id": uid(), "titulo": t["titulo"], "area": t["area"],
+                "prioridad": t["prioridad"], "fecha_inicio": "", "fecha": "",
+                "proyecto": new_proj_id, "notas": t.get("notas", ""),
+                "subtareas": t.get("subtareas", ""), "recurrente": "",
+                "depende_de": "", "etiqueta": t.get("etiqueta", ""),
+                "done": False, "pinned": False, "archived": False, "ts": now_ts(),
+            })
+        if new_tasks:
+            tareas = pd.concat([pd.DataFrame(new_tasks), tareas], ignore_index=True)
+            save_df("tareas", tareas)
+
+
+def _duplicate_task(task, tareas):
+    """Duplicate a single task."""
+    new_task = {
+        "id": uid(), "titulo": f"{task['titulo']} (copia)",
+        "area": task["area"], "prioridad": task["prioridad"],
+        "fecha_inicio": "", "fecha": "",
+        "proyecto": task.get("proyecto", ""), "notas": task.get("notas", ""),
+        "subtareas": task.get("subtareas", ""), "recurrente": "",
+        "depende_de": "", "etiqueta": task.get("etiqueta", ""),
+        "done": False, "pinned": False, "archived": False, "ts": now_ts(),
+    }
+    tareas = pd.concat([pd.DataFrame([new_task]), tareas], ignore_index=True)
+    save_df("tareas", tareas)

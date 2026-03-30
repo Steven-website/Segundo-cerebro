@@ -9,18 +9,19 @@ DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 
 SCHEMAS = {
     "notas": {"id": str, "titulo": str, "area": str, "tags": str, "body": str, "proyecto": str, "pinned": bool, "archived": bool, "ts": float},
-    "tareas": {"id": str, "titulo": str, "area": str, "prioridad": str, "fecha_inicio": str, "fecha": str, "proyecto": str, "notas": str, "subtareas": str, "recurrente": str, "depende_de": str, "done": bool, "pinned": bool, "archived": bool, "ts": float},
+    "tareas": {"id": str, "titulo": str, "area": str, "prioridad": str, "fecha_inicio": str, "fecha": str, "proyecto": str, "notas": str, "subtareas": str, "recurrente": str, "depende_de": str, "etiqueta": str, "done": bool, "pinned": bool, "archived": bool, "ts": float},
     "proyectos": {"id": str, "nombre": str, "area": str, "emoji": str, "desc": str, "estado": str, "fecha_inicio": str, "fecha_fin": str, "plantilla": bool, "compartido": str, "ts": float},
     "txs": {"id": str, "type": str, "desc": str, "amt": float, "cat": str, "fecha": str, "ts": float},
     "savings": {"id": str, "name": str, "goal": float, "current": float, "date": str, "ts": float},
     "debts": {"id": str, "name": str, "total": float, "paid": float, "rate": float, "due": str, "ts": float},
     "habitos": {"id": str, "name": str, "emoji": str, "cat": str, "freq": str, "checks": str, "streak": int, "ts": float},
-    "inventario": {"id": str, "name": str, "cat": str, "emoji": str, "val": float, "qty": int, "loc": str, "date": str, "notes": str, "status": str, "ts": float},
+    "inventario": {"id": str, "name": str, "cat": str, "emoji": str, "val": float, "qty": int, "loc": str, "date": str, "garantia": str, "notes": str, "status": str, "ts": float},
     "audios": {"id": str, "titulo": str, "fecha": str, "comentario": str, "formato": str, "tamano": int, "transcript": str, "resumen": str, "puntos_clave": str, "pendientes": str, "ts": float},
     "pomo_sessions": {"id": str, "tarea": str, "minutos": int, "fecha": str, "ts": float},
     "task_comments": {"id": str, "tarea_id": str, "texto": str, "autor": str, "ts": float},
     "debt_payments": {"id": str, "debt_id": str, "monto": float, "fecha": str, "nota": str, "ts": float},
     "metas": {"id": str, "titulo": str, "tipo": str, "periodo": str, "objetivo": str, "progreso": float, "completada": bool, "proyecto_id": str, "ts": float},
+    "tx_recurrentes": {"id": str, "type": str, "desc": str, "amt": float, "cat": str, "frecuencia": str, "dia": int, "activa": bool, "ts": float},
     "budget": {"cat": str, "amt": float},
 }
 
