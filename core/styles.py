@@ -299,6 +299,31 @@ footer {visibility: hidden;}
         word-break: break-all !important;
         white-space: pre-wrap !important;
     }
+
+    /* Reduce divider spacing on mobile */
+    hr {
+        margin: 6px 0 !important;
+    }
+
+    /* Radio nav buttons - compact on mobile */
+    [data-testid="stRadio"] > div {
+        gap: 4px !important;
+    }
+    [data-testid="stRadio"] label {
+        font-size: 13px !important;
+        padding: 6px 8px !important;
+    }
+
+    /* Metric cards compact */
+    [data-testid="stMetric"] {
+        padding: 6px !important;
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 20px !important;
+    }
+    [data-testid="stMetricLabel"] {
+        font-size: 11px !important;
+    }
 }
 </style>
 """

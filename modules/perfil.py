@@ -67,16 +67,19 @@ def render():
     # --- Avatar ---
     st.markdown("### Avatar")
     current_avatar = user_data.get("avatar", "👤")
-    cols = st.columns(len(AVATARS))
-    for i, av in enumerate(AVATARS):
-        with cols[i]:
-            selected = current_avatar == av
-            label = f"**{av}**" if selected else av
-            if st.button(av, key=f"av_{i}", use_container_width=True, type="primary" if selected else "secondary"):
-                users[username]["avatar"] = av
-                _save_users(users)
-                st.session_state["user_data"] = users[username]
-                st.rerun()
+    cols_per_row = 5
+    for row_start in range(0, len(AVATARS), cols_per_row):
+        row_avatars = AVATARS[row_start:row_start + cols_per_row]
+        cols = st.columns(cols_per_row)
+        for i, av in enumerate(row_avatars):
+            with cols[i]:
+                idx = row_start + i
+                selected = current_avatar == av
+                if st.button(av, key=f"av_{idx}", use_container_width=True, type="primary" if selected else "secondary"):
+                    users[username]["avatar"] = av
+                    _save_users(users)
+                    st.session_state["user_data"] = users[username]
+                    st.rerun()
 
     st.divider()
 

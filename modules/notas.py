@@ -11,9 +11,13 @@ def render():
     notas = get_df("notas")
 
     # --- Toolbar ---
-    col_search, col_filter, col_status, col_export, col_add = st.columns([3, 2, 1, 1, 1])
+    col_search, col_add = st.columns([5, 1])
     with col_search:
         search = st.text_input("Buscar", placeholder="Buscar por titulo o contenido...", label_visibility="collapsed")
+    with col_add:
+        add_nota = st.button("+ Nota", type="primary", use_container_width=True)
+
+    col_filter, col_status, col_export = st.columns([2, 2, 1])
     with col_filter:
         filter_options = ["Todas"] + [f'{a["emoji"]} {a["name"]}' for a in AREAS]
         filt = st.selectbox("Area", filter_options, label_visibility="collapsed")
@@ -21,8 +25,6 @@ def render():
         status = st.selectbox("Estado", ["Activas", "Fijadas", "Archivadas", "Todas"], label_visibility="collapsed", key="notas_status")
     with col_export:
         export_csv(notas, "notas.csv", "CSV")
-    with col_add:
-        add_nota = st.button("+ Nota", type="primary", use_container_width=True)
 
     # --- Filter logic ---
     filtered = notas.copy()
@@ -155,30 +157,29 @@ def render():
                     tags_list = [t.strip() for t in nota["tags"].split(",") if t.strip()]
                     st.caption(" ".join([f"`{t}`" for t in tags_list]))
 
-                col_v, col_pin, col_arch, col_e, col_d = st.columns(5)
+                col_v, col_e, col_more = st.columns([1, 1, 1])
                 with col_v:
                     if st.button("📖", key=f"view_{nota['id']}", use_container_width=True, help="Ver"):
                         st.session_state["nota_viewing"] = nota["id"]
-                        st.rerun()
-                with col_pin:
-                    pin_label = "📌" if not is_pinned else "❌"
-                    if st.button(pin_label, key=f"pin_{nota['id']}", use_container_width=True, help="Fijar" if not is_pinned else "Desfijar"):
-                        notas.loc[notas["id"] == nota["id"], "pinned"] = not is_pinned
-                        save_df("notas", notas)
-                        st.rerun()
-                with col_arch:
-                    arch_label = "📦" if not is_archived else "📤"
-                    if st.button(arch_label, key=f"arch_{nota['id']}", use_container_width=True, help="Archivar" if not is_archived else "Desarchivar"):
-                        notas.loc[notas["id"] == nota["id"], "archived"] = not is_archived
-                        save_df("notas", notas)
                         st.rerun()
                 with col_e:
                     if st.button("✏️", key=f"edit_{nota['id']}", use_container_width=True, help="Editar"):
                         st.session_state["nota_editing"] = True
                         st.session_state["nota_edit_id"] = nota["id"]
                         st.rerun()
-                with col_d:
-                    if confirm_delete(nota["id"], nota["titulo"], "nota"):
-                        notas = notas[notas["id"] != nota["id"]]
-                        save_df("notas", notas)
-                        st.rerun()
+                with col_more:
+                    pin_label = "📌" if not is_pinned else "❌📌"
+                    arch_label = "📦" if not is_archived else "📤"
+                    with st.popover("⋯", use_container_width=True):
+                        if st.button(f"{pin_label} {'Fijar' if not is_pinned else 'Desfijar'}", key=f"pin_{nota['id']}", use_container_width=True):
+                            notas.loc[notas["id"] == nota["id"], "pinned"] = not is_pinned
+                            save_df("notas", notas)
+                            st.rerun()
+                        if st.button(f"{arch_label} {'Archivar' if not is_archived else 'Desarchivar'}", key=f"arch_{nota['id']}", use_container_width=True):
+                            notas.loc[notas["id"] == nota["id"], "archived"] = not is_archived
+                            save_df("notas", notas)
+                            st.rerun()
+                        if confirm_delete(nota["id"], nota["titulo"], "nota"):
+                            notas = notas[notas["id"] != nota["id"]]
+                            save_df("notas", notas)
+                            st.rerun()
