@@ -85,6 +85,18 @@ def _get_month_txs(txs, year=None, month=None):
     return txs[txs["fecha"].str.startswith(prefix)]
 
 
+def _filter_by_period(txs_month, period, now):
+    """Filter month transactions by period (mensual, quincena1, quincena2)."""
+    if period == "mensual" or txs_month.empty:
+        return txs_month
+    # Extract day from fecha string
+    days = txs_month["fecha"].str.split("-").str[2].astype(int)
+    if period == "quincena1":
+        return txs_month[days <= 15]
+    else:  # quincena2
+        return txs_month[days > 15]
+
+
 def render():
     st.header("Finanzas")
 
@@ -99,37 +111,54 @@ def render():
         for k, v in BUDGET_DEFAULT.items():
             budget.setdefault(k, v)
 
+    now = datetime.now()
+
+    # --- Period selector ---
+    period_options = {"mensual": "Mes completo", "quincena1": "Quincena 1 (1-15)", "quincena2": "Quincena 2 (16-fin)"}
+    today_day = now.day
+    default_idx = 1 if today_day <= 15 else 2  # auto-select current quincena
+    period = st.radio(
+        "Periodo", list(period_options.keys()),
+        format_func=lambda x: period_options[x],
+        horizontal=True, index=default_idx, key="fin_period",
+        label_visibility="collapsed",
+    )
+
     month_txs = _get_month_txs(txs)
-    ingresos = float(month_txs[month_txs["type"] == "ingreso"]["amt"].sum()) if not month_txs.empty else 0
-    gastos = float(month_txs[month_txs["type"] == "gasto"]["amt"].sum()) if not month_txs.empty else 0
+    period_txs = _filter_by_period(month_txs, period, now)
+
+    ingresos = float(period_txs[period_txs["type"] == "ingreso"]["amt"].sum()) if not period_txs.empty else 0
+    gastos = float(period_txs[period_txs["type"] == "gasto"]["amt"].sum()) if not period_txs.empty else 0
     balance = ingresos - gastos
 
-    # --- Comparison vs previous month ---
-    now = datetime.now()
+    # --- Comparison vs previous period ---
     prev_m = now.month - 1
     prev_y = now.year
     if prev_m <= 0:
         prev_m += 12
         prev_y -= 1
     prev_txs = _get_month_txs(txs, prev_y, prev_m)
-    prev_gastos = float(prev_txs[prev_txs["type"] == "gasto"]["amt"].sum()) if not prev_txs.empty else 0
-    prev_ingresos = float(prev_txs[prev_txs["type"] == "ingreso"]["amt"].sum()) if not prev_txs.empty else 0
+    prev_period_txs = _filter_by_period(prev_txs, period, now)
+    prev_gastos = float(prev_period_txs[prev_period_txs["type"] == "gasto"]["amt"].sum()) if not prev_period_txs.empty else 0
+    prev_ingresos = float(prev_period_txs[prev_period_txs["type"] == "ingreso"]["amt"].sum()) if not prev_period_txs.empty else 0
+
+    period_label = period_options[period]
 
     # --- Summary metrics ---
-    c1, c2, c3 = st.columns(3)
+    c1, c2 = st.columns(2)
     inc_delta = None
     if prev_ingresos > 0:
         inc_change = int((ingresos - prev_ingresos) / prev_ingresos * 100)
-        inc_delta = f"{inc_change:+d}% vs mes anterior"
+        inc_delta = f"{inc_change:+d}% vs anterior"
     c1.metric("Ingresos", fmt(ingresos), delta=inc_delta)
 
     exp_delta = None
     if prev_gastos > 0:
         exp_change = int((gastos - prev_gastos) / prev_gastos * 100)
-        exp_delta = f"{exp_change:+d}% vs mes anterior"
+        exp_delta = f"{exp_change:+d}% vs anterior"
     c2.metric("Gastos", fmt(gastos), delta=exp_delta, delta_color="inverse")
 
-    c3.metric("Balance", fmt(balance), delta="Positivo" if balance >= 0 else "Negativo", delta_color="normal" if balance >= 0 else "inverse")
+    st.metric("Balance", fmt(balance), delta="Positivo" if balance >= 0 else "Negativo", delta_color="normal" if balance >= 0 else "inverse")
 
     st.divider()
 
@@ -232,15 +261,18 @@ def render():
     col_budget, col_txs = st.columns(2)
 
     with col_budget:
-        st.subheader("Presupuesto mensual")
+        budget_label = "Presupuesto quincenal" if period != "mensual" else "Presupuesto mensual"
+        st.subheader(budget_label)
+        budget_factor = 0.5 if period != "mensual" else 1.0
         for cat, limit in budget.items():
             if cat == "ingreso":
                 continue
             icon = CAT_ICONS.get(cat, "\U0001f4e6")
-            spent = float(month_txs[(month_txs["type"] == "gasto") & (month_txs["cat"] == cat)]["amt"].sum()) if not month_txs.empty else 0
-            pct = min(spent / limit, 1.0) if limit > 0 else 0
+            adj_limit = limit * budget_factor
+            spent = float(period_txs[(period_txs["type"] == "gasto") & (period_txs["cat"] == cat)]["amt"].sum()) if not period_txs.empty else 0
+            pct = min(spent / adj_limit, 1.0) if adj_limit > 0 else 0
 
-            st.markdown(f"{icon} **{cat.capitalize()}** \u2022 {fmt(spent)} / {fmt(limit)}")
+            st.markdown(f"{icon} **{cat.capitalize()}** \u2022 {fmt(spent)} / {fmt(adj_limit)}")
             st.progress(pct)
 
         with st.expander("Editar presupuesto"):
@@ -257,11 +289,11 @@ def render():
                     st.rerun()
 
     with col_txs:
-        st.subheader("Transacciones recientes")
-        if txs.empty:
-            st.info("Sin transacciones.")
+        st.subheader("Transacciones del periodo")
+        if period_txs.empty:
+            st.info("Sin transacciones en este periodo.")
         else:
-            recent = txs.sort_values("ts", ascending=False).head(12)
+            recent = period_txs.sort_values("ts", ascending=False).head(15)
             for _, tx in recent.iterrows():
                 icon = CAT_ICONS.get(tx["cat"], "\U0001f4e6")
                 sign = "+" if tx["type"] == "ingreso" else "-"
