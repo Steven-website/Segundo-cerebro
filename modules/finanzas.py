@@ -8,6 +8,74 @@ from core.utils import confirm_delete, export_csv
 FREQ_OPTIONS = {"mensual": "Mensual", "quincenal": "Quincenal", "semanal": "Semanal"}
 
 
+def _auto_generate_recurring(txs):
+    """Auto-generate transactions from active recurring subscriptions."""
+    recurrentes = get_df("tx_recurrentes")
+    if recurrentes.empty:
+        return txs
+
+    active = recurrentes[recurrentes["activa"] == True] if "activa" in recurrentes.columns else recurrentes
+    if active.empty:
+        return txs
+
+    today = date.today()
+    new_txs = []
+
+    for _, r in active.iterrows():
+        freq = r.get("frecuencia", "mensual")
+        dia = int(r["dia"])
+
+        # Determine which dates to check based on frequency
+        dates_to_check = []
+        if freq == "mensual":
+            # Check current month
+            try:
+                target = date(today.year, today.month, min(dia, 28))
+            except ValueError:
+                target = date(today.year, today.month, 28)
+            if target <= today:
+                dates_to_check.append(target)
+        elif freq == "quincenal":
+            # Check 1st and 15th-based or dia and dia+15
+            for d in [dia, min(dia + 15, 28)]:
+                try:
+                    target = date(today.year, today.month, min(d, 28))
+                except ValueError:
+                    target = date(today.year, today.month, 28)
+                if target <= today:
+                    dates_to_check.append(target)
+        elif freq == "semanal":
+            # Check all matching weekdays this month up to today
+            d = date(today.year, today.month, 1)
+            while d <= today:
+                if d.isoweekday() == min(dia, 7):
+                    dates_to_check.append(d)
+                d = d.replace(day=d.day + 1) if d.day < 28 else d
+                if d.day >= 28:
+                    break
+
+        for target_date in dates_to_check:
+            target_str = str(target_date)
+            # Check if already generated (same desc + same date)
+            already_exists = False
+            if not txs.empty:
+                matches = txs[(txs["desc"] == r["desc"]) & (txs["fecha"] == target_str)]
+                already_exists = not matches.empty
+
+            if not already_exists:
+                new_txs.append({
+                    "id": uid(), "type": r["type"], "desc": r["desc"],
+                    "amt": float(r["amt"]), "cat": r["cat"],
+                    "fecha": target_str, "ts": now_ts(),
+                })
+
+    if new_txs:
+        txs = pd.concat([pd.DataFrame(new_txs), txs], ignore_index=True)
+        save_df("txs", txs)
+
+    return txs
+
+
 def _get_month_txs(txs, year=None, month=None):
     if txs.empty:
         return txs
@@ -22,6 +90,7 @@ def render():
     st.header("Finanzas")
 
     txs = get_df("txs")
+    txs = _auto_generate_recurring(txs)
     budget_df = get_df("budget")
 
     if budget_df.empty:
