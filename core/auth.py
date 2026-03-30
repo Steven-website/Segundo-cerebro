@@ -1,7 +1,13 @@
 import hashlib
 import json
 import os
+import re
 import streamlit as st
+
+
+def _is_valid_email(email):
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return bool(re.match(pattern, email))
 
 USERS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "users.json")
 
@@ -63,18 +69,20 @@ def render_auth():
 
         with tab_login:
             with st.form("login_form"):
-                username = st.text_input("Usuario", placeholder="tu_usuario")
+                username = st.text_input("Correo electronico", placeholder="correo@ejemplo.com")
                 password = st.text_input("Contrasena", type="password", placeholder="******")
                 submitted = st.form_submit_button("Entrar", type="primary", use_container_width=True)
 
                 if submitted:
                     if not username.strip() or not password.strip():
                         st.error("Completa todos los campos.")
+                    elif not _is_valid_email(username.strip()):
+                        st.error("Ingresa un correo electronico valido.")
                     else:
                         users = _load_users()
                         username = username.strip().lower()
                         if username not in users:
-                            st.error("Usuario no encontrado.")
+                            st.error("Correo no registrado.")
                         else:
                             hashed = _hash_password(password, username)
                             if hashed != users[username]["hash"]:
@@ -89,7 +97,7 @@ def render_auth():
         with tab_register:
             with st.form("register_form"):
                 name = st.text_input("Nombre completo", placeholder="Juan Perez")
-                new_user = st.text_input("Usuario", placeholder="juanperez (min 3 caracteres)")
+                new_user = st.text_input("Correo electronico", placeholder="correo@ejemplo.com")
                 new_pass = st.text_input("Contrasena", type="password", placeholder="Min 6 caracteres")
                 new_pass2 = st.text_input("Confirmar contrasena", type="password")
                 submitted = st.form_submit_button("Crear cuenta", type="primary", use_container_width=True)
@@ -98,8 +106,8 @@ def render_auth():
                     new_user = new_user.strip().lower()
                     if not name.strip():
                         st.error("Ingresa tu nombre.")
-                    elif len(new_user) < 3:
-                        st.error("El usuario debe tener al menos 3 caracteres.")
+                    elif not _is_valid_email(new_user):
+                        st.error("Ingresa un correo electronico valido.")
                     elif len(new_pass) < 6:
                         st.error("La contrasena debe tener al menos 6 caracteres.")
                     elif new_pass != new_pass2:
@@ -107,11 +115,11 @@ def render_auth():
                     else:
                         users = _load_users()
                         if new_user in users:
-                            st.error("Ese usuario ya existe.")
+                            st.error("Ese correo ya esta registrado.")
                         else:
                             users[new_user] = {
                                 "name": name.strip(),
                                 "hash": _hash_password(new_pass, new_user),
                             }
                             _save_users(users)
-                            st.success(f"Cuenta creada! Ahora inicia sesion como '{new_user}'.")
+                            st.success(f"Cuenta creada! Ahora inicia sesion con '{new_user}'.")
