@@ -16,6 +16,10 @@ inject_css()
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
+# Auto-login via token in URL
+from core.auth import check_token_login
+check_token_login()
+
 if not st.session_state["logged_in"]:
     from core.auth import render_auth
     render_auth()
