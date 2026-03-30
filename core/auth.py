@@ -85,13 +85,6 @@ def render_auth():
                                 st.session_state["user_data"] = users[username]
                                 st.rerun()
 
-            # Quick login pills
-            users = _load_users()
-            if users:
-                st.caption("Usuarios registrados:")
-                for uname, udata in users.items():
-                    if st.button(f"\U0001f464 {udata.get('name', uname)}", key=f"quick_{uname}", use_container_width=True):
-                        st.session_state["_prefill_user"] = uname
 
         with tab_register:
             with st.form("register_form"):
