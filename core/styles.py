@@ -168,6 +168,31 @@ footer {visibility: hidden;}
     font-size: 10px;
     letter-spacing: 0.06em;
 }
+
+/* Tag badges */
+.tag-urgente { background: rgba(201,106,106,0.2); color: #c96a6a; padding: 2px 8px; border-radius: 10px; font-size: 10px; }
+.tag-bug { background: rgba(201,148,58,0.2); color: #c9943a; padding: 2px 8px; border-radius: 10px; font-size: 10px; }
+.tag-idea { background: rgba(138,106,201,0.2); color: #8a6ac9; padding: 2px 8px; border-radius: 10px; font-size: 10px; }
+.tag-reunion { background: rgba(90,143,201,0.2); color: #5a8fc9; padding: 2px 8px; border-radius: 10px; font-size: 10px; }
+.tag-personal { background: rgba(74,158,122,0.2); color: #4a9e7a; padding: 2px 8px; border-radius: 10px; font-size: 10px; }
+
+/* Mobile: stack columns, bigger touch targets */
+@media (max-width: 768px) {
+    [data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap !important;
+    }
+    [data-testid="stHorizontalBlock"] > div {
+        min-width: 100% !important;
+    }
+    button {
+        min-height: 44px !important;
+    }
+    .stCheckbox label {
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+    }
+}
 </style>
 """
 
