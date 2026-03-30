@@ -2,7 +2,6 @@ import hashlib
 import json
 import os
 import re
-import uuid
 import streamlit as st
 
 
@@ -58,34 +57,6 @@ def _save_users(users):
 def _hash_password(password, username):
     return hashlib.sha256(f"{password}{username}".encode()).hexdigest()
 
-
-def _generate_token():
-    return uuid.uuid4().hex
-
-
-def check_token_login():
-    """Check if URL has a valid token and auto-login. Returns True if logged in."""
-    if st.session_state.get("logged_in"):
-        return True
-    token = st.query_params.get("token", "")
-    if not token:
-        return False
-    users = _load_users()
-    # Ensure all users have tokens
-    changed = False
-    for u in users:
-        if "token" not in users[u]:
-            users[u]["token"] = _generate_token()
-            changed = True
-    if changed:
-        _save_users(users)
-    for username, data in users.items():
-        if data.get("token") == token:
-            st.session_state["logged_in"] = True
-            st.session_state["current_user"] = username
-            st.session_state["user_data"] = data
-            return True
-    return False
 
 
 def _push_users_to_github():
@@ -143,10 +114,6 @@ def render_auth():
                             if hashed != users[username]["hash"]:
                                 st.error("Contrasena incorrecta.")
                             else:
-                                # Generate token if user doesn't have one
-                                if "token" not in users[username]:
-                                    users[username]["token"] = _generate_token()
-                                    _save_users(users)
                                 st.session_state["logged_in"] = True
                                 st.session_state["current_user"] = username
                                 st.session_state["user_data"] = users[username]
@@ -179,7 +146,6 @@ def render_auth():
                             users[new_user] = {
                                 "name": name.strip(),
                                 "hash": _hash_password(new_pass, new_user),
-                                "token": _generate_token(),
                             }
                             _save_users(users)
                             st.success(f"Cuenta creada! Ahora inicia sesion con '{new_user}'.")
