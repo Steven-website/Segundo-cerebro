@@ -183,7 +183,7 @@ def render():
                     "fecha": str(fecha),
                     "proyecto": proj_ids[proj_idx],
                     "notas": "", "subtareas": "",
-                    "recurrente": "", "depende_de": "",
+                    "recurrente": "", "depende_de": "", "etiqueta": "",
                     "done": False, "pinned": False, "archived": False,
                     "ts": now_ts(),
                 }

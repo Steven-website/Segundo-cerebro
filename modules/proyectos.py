@@ -928,7 +928,7 @@ def _create_from_template(template_name, template, proyectos, tareas):
             "id": uid(), "titulo": task_title, "area": "proyectos",
             "prioridad": "media", "fecha_inicio": "", "fecha": "",
             "proyecto": proj_id, "notas": "", "subtareas": "",
-            "recurrente": "", "depende_de": "",
+            "recurrente": "", "depende_de": "", "etiqueta": "",
             "done": False, "pinned": False, "archived": False, "ts": now_ts(),
         })
     if new_tasks:

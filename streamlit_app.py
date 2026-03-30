@@ -1,4 +1,6 @@
 import streamlit as st
+import json
+import os
 from core.styles import inject_css
 
 st.set_page_config(
@@ -83,6 +85,7 @@ PAGES = [
     "◈ Dashboard",
     "📌 Hoy",
     "🔍 Buscar",
+    "📝 Notas",
     "◈ Proyectos",
     "🎯 Metas",
     "₡ Finanzas",
@@ -99,8 +102,6 @@ PAGES = [
 ]
 
 # --- Top navigation bar (works on mobile) ---
-import json, os
-
 user = st.session_state.get("current_user", "")
 avatar = "👤"
 if user:
@@ -147,6 +148,8 @@ elif page == "📌 Hoy":
     from modules.hoy import render
 elif page == "🔍 Buscar":
     from modules.buscar import render
+elif page == "📝 Notas":
+    from modules.notas import render
 elif page == "◈ Proyectos":
     from modules.proyectos import render
 elif page == "🎯 Metas":
