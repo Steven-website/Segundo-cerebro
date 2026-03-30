@@ -1,12 +1,14 @@
 import streamlit as st
+import pandas as pd
 import time as time_module
-from core.data import get_df
+from datetime import datetime, timedelta
+from core.data import get_df, save_df, uid, now_ts
 from core.constants import AREA_LABELS
 from core.utils import PRIORITY_EMOJIS
 
 
 def render():
-    st.header("\U0001f345 Pomodoro")
+    st.header("Pomodoro")
     st.caption("Temporizador de enfoque para tus tareas")
 
     # Settings
@@ -52,54 +54,109 @@ def render():
     if st.session_state["pomo_running"]:
         remaining = st.session_state["pomo_end_time"] - time_module.time()
         if remaining <= 0:
-            # Timer finished
             st.session_state["pomo_running"] = False
             if st.session_state["pomo_mode"] == "work":
                 st.session_state["pomo_count"] += 1
                 st.session_state["pomo_mode"] = "break"
                 st.balloons()
-                st.success(f"\U0001f389 Pomodoro #{st.session_state['pomo_count']} completado! Toma un descanso.")
+                st.success(f"Pomodoro #{st.session_state['pomo_count']} completado! Toma un descanso.")
+                # Save session persistently
+                _save_pomo_session(selected_task, work_min)
             else:
                 st.session_state["pomo_mode"] = "work"
-                st.info("\u2615 Descanso terminado. Listo para otro pomodoro?")
+                st.info("Descanso terminado. Listo para otro pomodoro?")
         else:
             mins = int(remaining // 60)
             secs = int(remaining % 60)
-            mode_label = "\U0001f4aa Trabajando" if st.session_state["pomo_mode"] == "work" else "\u2615 Descanso"
+            mode_label = "Trabajando" if st.session_state["pomo_mode"] == "work" else "Descanso"
             mode_color = "red" if st.session_state["pomo_mode"] == "work" else "green"
 
             st.markdown(f"### {mode_label}")
             st.markdown(f"# :{mode_color}[{mins:02d}:{secs:02d}]")
 
             if selected_task != "Ninguna (enfoque libre)":
-                st.caption(f"\U0001f3af Enfocado en: **{selected_task}**")
+                st.caption(f"Enfocado en: **{selected_task}**")
 
-            if st.button("\u23f9 Detener", type="primary", use_container_width=True):
+            if st.button("Detener", type="primary", use_container_width=True):
                 st.session_state["pomo_running"] = False
                 st.rerun()
 
-            # Auto-refresh every second
             time_module.sleep(1)
             st.rerun()
     else:
-        # Not running
         mode = st.session_state["pomo_mode"]
         duration = work_min if mode == "work" else break_min
         label = "Iniciar trabajo" if mode == "work" else "Iniciar descanso"
-        icon = "\U0001f680" if mode == "work" else "\u2615"
 
-        st.markdown(f"### {icon} {label} ({duration} min)")
+        st.markdown(f"### {label} ({duration} min)")
 
-        if st.button(f"{icon} {label}", type="primary", use_container_width=True):
+        if st.button(label, type="primary", use_container_width=True):
             st.session_state["pomo_running"] = True
             st.session_state["pomo_end_time"] = time_module.time() + (duration * 60)
             st.rerun()
 
     st.divider()
 
-    # --- Stats ---
+    # --- Session stats (today) ---
     st.subheader("Sesion de hoy")
     col_s1, col_s2, col_s3 = st.columns(3)
-    col_s1.metric("Pomodoros", f"\U0001f345 {st.session_state['pomo_count']}")
+    col_s1.metric("Pomodoros", f"{st.session_state['pomo_count']}")
     col_s2.metric("Minutos enfocado", f"{st.session_state['pomo_count'] * work_min}")
     col_s3.metric("Modo actual", "Trabajo" if st.session_state["pomo_mode"] == "work" else "Descanso")
+
+    st.divider()
+
+    # --- Persistent history ---
+    st.subheader("Historial de enfoque")
+    pomo_sessions = get_df("pomo_sessions")
+
+    if pomo_sessions.empty:
+        st.info("No hay sesiones guardadas aun. Completa un pomodoro para empezar el historial.")
+        return
+
+    # Stats
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_sessions = pomo_sessions[pomo_sessions["fecha"] == today_str]
+    week_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    week_sessions = pomo_sessions[pomo_sessions["fecha"] >= week_ago]
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Hoy", f"{len(today_sessions)} ses.")
+    c2.metric("Min hoy", f"{int(today_sessions['minutos'].sum())}" if not today_sessions.empty else "0")
+    c3.metric("Esta semana", f"{len(week_sessions)} ses.")
+    c4.metric("Min semana", f"{int(week_sessions['minutos'].sum())}" if not week_sessions.empty else "0")
+
+    # Chart: last 7 days
+    st.subheader("Enfoque (7 dias)")
+    days_data = []
+    for d in range(6, -1, -1):
+        day = datetime.now() - timedelta(days=d)
+        ds = day.strftime("%Y-%m-%d")
+        day_label = day.strftime("%a")
+        day_sessions = pomo_sessions[pomo_sessions["fecha"] == ds]
+        total_min = int(day_sessions["minutos"].sum()) if not day_sessions.empty else 0
+        days_data.append({"Dia": day_label, "Minutos": total_min})
+
+    chart_df = pd.DataFrame(days_data)
+    st.bar_chart(chart_df.set_index("Dia"), color=["#c96a6a"])
+
+    # Recent sessions table
+    with st.expander("Sesiones recientes"):
+        recent = pomo_sessions.sort_values("ts", ascending=False).head(20)
+        for _, s in recent.iterrows():
+            tarea_label = s["tarea"] if s["tarea"] else "Enfoque libre"
+            st.caption(f"{s['fecha']} | {s['minutos']} min | {tarea_label}")
+
+
+def _save_pomo_session(task_name, minutes):
+    """Save a completed Pomodoro session to persistent storage."""
+    sessions = get_df("pomo_sessions")
+    new_session = {
+        "id": uid(),
+        "tarea": task_name if task_name != "Ninguna (enfoque libre)" else "",
+        "minutos": minutes,
+        "fecha": datetime.now().strftime("%Y-%m-%d"),
+        "ts": now_ts(),
+    }
+    sessions = pd.concat([pd.DataFrame([new_session]), sessions], ignore_index=True)
+    save_df("pomo_sessions", sessions)
