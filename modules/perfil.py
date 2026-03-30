@@ -99,7 +99,7 @@ def render():
     except Exception:
         base_url = ""
     if not base_url:
-        base_url = "https://segundo-cerebro.streamlit.app"
+        base_url = "https://segundo-cerebro-mwwcchrpfs9uxxvcozqecu.streamlit.app"
     link = f"{base_url}/?token={token}"
     st.code(link, language=None)
 
