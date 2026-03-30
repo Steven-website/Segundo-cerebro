@@ -81,6 +81,7 @@ def show_alerts():
 # --- Navigation pages ---
 PAGES = [
     "◈ Dashboard",
+    "📌 Hoy",
     "🔍 Buscar",
     "◈ Proyectos",
     "◷ Tareas",
@@ -143,6 +144,8 @@ st.divider()
 # --- Routing ---
 if page == "◈ Dashboard":
     from modules.dashboard import render
+elif page == "📌 Hoy":
+    from modules.hoy import render
 elif page == "🔍 Buscar":
     from modules.buscar import render
 elif page == "◷ Tareas":

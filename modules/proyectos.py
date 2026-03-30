@@ -1,9 +1,35 @@
 import streamlit as st
 import pandas as pd
+import json
 from datetime import datetime
 from core.data import get_df, save_df, uid, now_ts
 from core.constants import AREAS, AREA_LABELS, PRIORITY_LABELS
 from core.utils import confirm_delete, export_csv, PRIORITY_EMOJIS
+
+
+def _parse_subtareas(subtareas_str):
+    """Parse subtasks - supports both JSON and plain text format."""
+    if not subtareas_str:
+        return []
+    try:
+        subs = json.loads(subtareas_str)
+        if isinstance(subs, list):
+            return subs
+    except (json.JSONDecodeError, TypeError):
+        pass
+    # Fallback: plain text format → convert to JSON structure
+    lines = [l.strip() for l in subtareas_str.split("\n") if l.strip()]
+    result = []
+    for line in lines:
+        done = line.startswith("[x]")
+        text = line.replace("[x] ", "").replace("[x]", "").replace("[ ] ", "").replace("[ ]", "").strip()
+        result.append({"text": text, "fecha": "", "done": done})
+    return result
+
+
+def _save_subtareas(subs):
+    """Serialize subtasks list to JSON string."""
+    return json.dumps(subs, ensure_ascii=False)
 
 
 ESTADOS = {"activo": "🟢 Activo", "pausado": "🟡 Pausado", "completado": "✅ Completado", "cancelado": "🔴 Cancelado"}
@@ -226,12 +252,15 @@ def _render_project_detail(project, proyectos, tareas):
             cancelled = col_c.form_submit_button("Cancelar")
 
             if submitted and titulo.strip():
+                # Convert plain text subtasks to JSON format
+                sub_lines = [l.strip() for l in subtareas_txt.split("\n") if l.strip()] if subtareas_txt else []
+                subs_json = _save_subtareas([{"text": l, "fecha": "", "done": False} for l in sub_lines]) if sub_lines else ""
                 new_task = {
                     "id": uid(), "titulo": titulo.strip(), "area": project["area"],
                     "prioridad": prioridad,
                     "fecha_inicio": str(fecha_inicio) if fecha_inicio else "",
                     "fecha": str(fecha_fin) if fecha_fin else "",
-                    "proyecto": proj_id, "notas": notas_txt, "subtareas": subtareas_txt,
+                    "proyecto": proj_id, "notas": notas_txt, "subtareas": subs_json,
                     "recurrente": "", "depende_de": "", "done": False,
                     "pinned": False, "archived": False, "ts": now_ts(),
                 }
@@ -274,9 +303,9 @@ def _render_task_row(t, tareas, show_detail=True):
     comments = get_df("task_comments")
     task_comments = comments[comments["tarea_id"] == t["id"]] if not comments.empty else pd.DataFrame()
     comment_count = len(task_comments)
-    subtareas_str = t.get("subtareas", "")
-    sub_count = len([l for l in subtareas_str.split("\n") if l.strip()]) if subtareas_str else 0
-    sub_done = len([l for l in subtareas_str.split("\n") if l.strip().startswith("[x]")]) if subtareas_str else 0
+    subs = _parse_subtareas(t.get("subtareas", ""))
+    sub_count = len(subs)
+    sub_done = sum(1 for s in subs if s.get("done"))
 
     with st.container(border=True):
         col_check, col_body, col_actions = st.columns([0.5, 5, 1.5])
@@ -365,27 +394,29 @@ def _render_task_detail(task, tareas, proyectos):
 
     # ═══ SUBTAREAS ═══
     st.subheader("Subtareas")
-    subtareas_str = task.get("subtareas", "")
-    lines = [l.strip() for l in subtareas_str.split("\n") if l.strip()] if subtareas_str else []
+    subs = _parse_subtareas(task.get("subtareas", ""))
 
-    if lines:
+    if subs:
         updated = False
-        new_lines = []
-        for i, line in enumerate(lines):
-            is_done = line.startswith("[x]")
-            text = line.replace("[x] ", "").replace("[x]", "").replace("[ ] ", "").replace("[ ]", "").strip()
-            col_c, col_t = st.columns([0.5, 5.5])
+        for i, sub in enumerate(subs):
+            col_c, col_t, col_date = st.columns([0.5, 4.5, 1.5])
             with col_c:
-                checked = st.checkbox("", value=is_done, key=f"sub_{task_id}_{i}", label_visibility="collapsed")
-                if checked != is_done:
+                checked = st.checkbox("", value=sub.get("done", False), key=f"sub_{task_id}_{i}", label_visibility="collapsed")
+                if checked != sub.get("done", False):
+                    subs[i]["done"] = checked
                     updated = True
             with col_t:
                 style = "~~" if checked else ""
-                st.markdown(f"{style}{text}{style}")
-            new_lines.append(f"[x] {text}" if checked else text)
+                st.markdown(f"{style}{sub['text']}{style}")
+            with col_date:
+                sub_fecha = sub.get("fecha", "")
+                if sub_fecha:
+                    today = datetime.now().strftime("%Y-%m-%d")
+                    color = "red" if sub_fecha < today and not checked else "gray"
+                    st.caption(f":{color}[📅 {sub_fecha}]")
 
         if updated:
-            tareas.loc[tareas["id"] == task_id, "subtareas"] = "\n".join(new_lines)
+            tareas.loc[tareas["id"] == task_id, "subtareas"] = _save_subtareas(subs)
             save_df("tareas", tareas)
             st.rerun()
     else:
@@ -393,12 +424,17 @@ def _render_task_detail(task, tareas, proyectos):
 
     # Add subtask
     with st.form("add_subtask_form", clear_on_submit=True):
-        new_sub = st.text_input("Nueva subtarea", placeholder="Escribe una subtarea...")
+        col_sub, col_date = st.columns([3, 1])
+        new_sub = col_sub.text_input("Nueva subtarea", placeholder="Escribe una subtarea...")
+        sub_fecha = col_date.date_input("Fecha (opcional)", value=None, key="new_sub_fecha")
         if st.form_submit_button("Agregar subtarea"):
             if new_sub.strip():
-                current = task.get("subtareas", "") or ""
-                new_subtareas = (current + "\n" + new_sub.strip()).strip()
-                tareas.loc[tareas["id"] == task_id, "subtareas"] = new_subtareas
+                subs.append({
+                    "text": new_sub.strip(),
+                    "fecha": str(sub_fecha) if sub_fecha else "",
+                    "done": False,
+                })
+                tareas.loc[tareas["id"] == task_id, "subtareas"] = _save_subtareas(subs)
                 save_df("tareas", tareas)
                 st.rerun()
 
@@ -449,20 +485,35 @@ def _render_task_edit_form(task, tareas, proyectos):
         fecha_fin = c4.date_input("Fecha limite", value=None)
 
         notas_txt = st.text_area("Descripcion", value=task.get("notas", ""), height=80)
-        subtareas_txt = st.text_area("Subtareas (una por linea)", value=task.get("subtareas", ""), height=80)
+
+        # Show subtasks as editable text (one per line)
+        existing_subs = _parse_subtareas(task.get("subtareas", ""))
+        existing_subs_text = "\n".join(s["text"] for s in existing_subs) if existing_subs else ""
+        subtareas_txt = st.text_area("Subtareas (una por linea)", value=existing_subs_text, height=80,
+                                     help="Las fechas de subtareas se asignan desde la vista de detalle")
 
         col_s, col_c = st.columns(2)
         submitted = col_s.form_submit_button("Guardar", type="primary")
         cancelled = col_c.form_submit_button("Cancelar")
 
         if submitted and titulo.strip():
+            # Merge subtask text edits preserving existing dates/done state
+            new_lines = [l.strip() for l in subtareas_txt.split("\n") if l.strip()]
+            old_subs = {s["text"]: s for s in existing_subs}
+            merged_subs = []
+            for line in new_lines:
+                if line in old_subs:
+                    merged_subs.append(old_subs[line])
+                else:
+                    merged_subs.append({"text": line, "fecha": "", "done": False})
+
             tareas.loc[tareas["id"] == task["id"], "titulo"] = titulo.strip()
             tareas.loc[tareas["id"] == task["id"], "prioridad"] = prioridad
             tareas.loc[tareas["id"] == task["id"], "area"] = area
             tareas.loc[tareas["id"] == task["id"], "fecha_inicio"] = str(fecha_inicio) if fecha_inicio else ""
             tareas.loc[tareas["id"] == task["id"], "fecha"] = str(fecha_fin) if fecha_fin else ""
             tareas.loc[tareas["id"] == task["id"], "notas"] = notas_txt
-            tareas.loc[tareas["id"] == task["id"], "subtareas"] = subtareas_txt
+            tareas.loc[tareas["id"] == task["id"], "subtareas"] = _save_subtareas(merged_subs) if merged_subs else ""
             save_df("tareas", tareas)
             st.session_state["task_detail_editing"] = False
             st.rerun()
