@@ -62,6 +62,7 @@ PAGES = [
     "\U0001f4c5 Calendario",
     "\u25a3 Inventario",
     "\U0001f345 Pomodoro",
+    "\U0001f3a4 Audios",
     "\U0001f916 Buscar con IA",
     "\U0001f4be Backup & Importar",
 ]
@@ -69,7 +70,7 @@ PAGES = [
 # --- Sidebar ---
 with st.sidebar:
     st.markdown("### \U0001f9e0 Segundo Cerebro")
-    st.caption("v5 \u2022 PKM Personal")
+    st.caption("v6 \u2022 PKM Personal")
 
     user = st.session_state.get("current_user", "")
     if user:
@@ -115,6 +116,8 @@ elif page == "\u25a3 Inventario":
     from modules.inventario import render
 elif page == "\U0001f345 Pomodoro":
     from modules.pomodoro import render
+elif page == "\U0001f3a4 Audios":
+    from modules.audio import render
 elif page == "\U0001f916 Buscar con IA":
     from modules.ia import render
 elif page == "\U0001f4be Backup & Importar":

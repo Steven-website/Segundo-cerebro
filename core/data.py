@@ -15,6 +15,7 @@ SCHEMAS = {
     "debts": {"id": str, "name": str, "total": float, "paid": float, "rate": float, "due": str, "ts": float},
     "habitos": {"id": str, "name": str, "emoji": str, "cat": str, "freq": str, "checks": str, "streak": int, "ts": float},
     "inventario": {"id": str, "name": str, "cat": str, "emoji": str, "val": float, "qty": int, "loc": str, "date": str, "notes": str, "status": str, "ts": float},
+    "audios": {"id": str, "titulo": str, "transcript": str, "resumen": str, "puntos_clave": str, "pendientes": str, "ts": float},
     "budget": {"cat": str, "amt": float},
 }
 
