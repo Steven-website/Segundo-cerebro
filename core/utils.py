@@ -1,4 +1,5 @@
 import json
+import pandas as pd
 import streamlit as st
 from datetime import datetime
 from core.constants import AREAS
@@ -59,3 +60,40 @@ def export_csv(df, filename, label="Exportar CSV"):
     if not df.empty:
         csv = df.to_csv(index=False).encode("utf-8")
         st.download_button(label, csv, filename, "text/csv", use_container_width=True)
+
+
+def soft_delete(item, tipo, nombre):
+    """Move an item to papelera instead of permanent delete."""
+    from core.data import get_df, save_df, uid, now_ts
+    papelera = get_df("papelera")
+    new_row = {
+        "id": uid(),
+        "tipo": tipo,
+        "nombre": nombre,
+        "data": json.dumps(item if isinstance(item, dict) else item.to_dict(), ensure_ascii=False, default=str),
+        "deleted_ts": now_ts(),
+    }
+    papelera = pd.concat([pd.DataFrame([new_row]), papelera], ignore_index=True)
+    save_df("papelera", papelera)
+
+
+def cascade_delete_project(project_id):
+    """Delete a project and all its tasks, comments, sending everything to papelera."""
+    from core.data import get_df, save_df
+    tareas = get_df("tareas")
+    comments = get_df("task_comments")
+
+    # Move project tasks and their comments to trash
+    proj_tasks = tareas[tareas["proyecto"] == project_id] if not tareas.empty else pd.DataFrame()
+    for _, t in proj_tasks.iterrows():
+        # Trash comments for this task
+        task_comments = comments[comments["tarea_id"] == t["id"]] if not comments.empty else pd.DataFrame()
+        for _, c in task_comments.iterrows():
+            soft_delete(c, "comentario", f"Comentario en {t['titulo']}")
+        comments = comments[comments["tarea_id"] != t["id"]]
+        # Trash the task
+        soft_delete(t, "tarea", t["titulo"])
+
+    tareas = tareas[tareas["proyecto"] != project_id]
+    save_df("tareas", tareas)
+    save_df("task_comments", comments)

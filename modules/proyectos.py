@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 from core.data import get_df, save_df, uid, now_ts
 from core.constants import AREAS, AREA_LABELS, PRIORITY_LABELS
-from core.utils import confirm_delete, export_csv, PRIORITY_EMOJIS
+from core.utils import confirm_delete, export_csv, PRIORITY_EMOJIS, soft_delete, cascade_delete_project
 
 
 def _parse_subtareas(subtareas_str):
@@ -252,6 +252,8 @@ def _render_projects_list(proyectos, tareas):
                         st.rerun()
                 with c3:
                     if confirm_delete(p["id"], p["nombre"], "proj"):
+                        soft_delete(p, "proyecto", p["nombre"])
+                        cascade_delete_project(p["id"])
                         proyectos = proyectos[proyectos["id"] != p["id"]]
                         save_df("proyectos", proyectos)
                         st.rerun()
@@ -334,21 +336,24 @@ def _render_project_detail(project, proyectos, tareas):
             cancelled = col_c.form_submit_button("Cancelar")
 
             if submitted and titulo.strip():
-                sub_lines = [l.strip() for l in subtareas_txt.split("\n") if l.strip()] if subtareas_txt else []
-                subs_json = _save_subtareas([{"text": l, "fecha": "", "done": False} for l in sub_lines]) if sub_lines else ""
-                new_task = {
-                    "id": uid(), "titulo": titulo.strip(), "area": project["area"],
-                    "prioridad": prioridad,
-                    "fecha_inicio": str(fecha_inicio) if fecha_inicio else "",
-                    "fecha": str(fecha_fin) if fecha_fin else "",
-                    "proyecto": proj_id, "notas": notas_txt, "subtareas": subs_json,
-                    "recurrente": "", "depende_de": "", "etiqueta": etiqueta,
-                    "done": False, "pinned": False, "archived": False, "ts": now_ts(),
-                }
-                tareas = pd.concat([pd.DataFrame([new_task]), tareas], ignore_index=True)
-                save_df("tareas", tareas)
-                st.session_state["proj_task_adding"] = False
-                st.rerun()
+                if fecha_inicio and fecha_fin and fecha_inicio > fecha_fin:
+                    st.error("La fecha de inicio no puede ser mayor a la fecha limite.")
+                else:
+                    sub_lines = [l.strip() for l in subtareas_txt.split("\n") if l.strip()] if subtareas_txt else []
+                    subs_json = _save_subtareas([{"text": l, "fecha": "", "done": False} for l in sub_lines]) if sub_lines else ""
+                    new_task = {
+                        "id": uid(), "titulo": titulo.strip(), "area": project["area"],
+                        "prioridad": prioridad,
+                        "fecha_inicio": str(fecha_inicio) if fecha_inicio else "",
+                        "fecha": str(fecha_fin) if fecha_fin else "",
+                        "proyecto": proj_id, "notas": notas_txt, "subtareas": subs_json,
+                        "recurrente": "", "depende_de": "", "etiqueta": etiqueta,
+                        "done": False, "pinned": False, "archived": False, "ts": now_ts(),
+                    }
+                    tareas = pd.concat([pd.DataFrame([new_task]), tareas], ignore_index=True)
+                    save_df("tareas", tareas)
+                    st.session_state["proj_task_adding"] = False
+                    st.rerun()
             if cancelled:
                 st.session_state["proj_task_adding"] = False
                 st.rerun()
@@ -542,6 +547,7 @@ def _render_task_row(t, tareas, show_detail=True):
             with cb:
                 pass
             if confirm_delete(t["id"], t["titulo"], "ptask"):
+                soft_delete(t, "tarea", t["titulo"])
                 tareas = tareas[tareas["id"] != t["id"]]
                 save_df("tareas", tareas)
                 st.rerun()
@@ -754,27 +760,30 @@ def _render_task_edit_form(task, tareas, proyectos):
         cancelled = col_c.form_submit_button("Cancelar")
 
         if submitted and titulo.strip():
-            # Merge subtask text edits preserving existing dates/done state
-            new_lines = [l.strip() for l in subtareas_txt.split("\n") if l.strip()]
-            old_subs = {s["text"]: s for s in existing_subs}
-            merged_subs = []
-            for line in new_lines:
-                if line in old_subs:
-                    merged_subs.append(old_subs[line])
-                else:
-                    merged_subs.append({"text": line, "fecha": "", "done": False})
+            if fecha_inicio and fecha_fin and fecha_inicio > fecha_fin:
+                st.error("La fecha de inicio no puede ser mayor a la fecha limite.")
+            else:
+                # Merge subtask text edits preserving existing dates/done state
+                new_lines = [l.strip() for l in subtareas_txt.split("\n") if l.strip()]
+                old_subs = {s["text"]: s for s in existing_subs}
+                merged_subs = []
+                for line in new_lines:
+                    if line in old_subs:
+                        merged_subs.append(old_subs[line])
+                    else:
+                        merged_subs.append({"text": line, "fecha": "", "done": False})
 
-            tareas.loc[tareas["id"] == task["id"], "titulo"] = titulo.strip()
-            tareas.loc[tareas["id"] == task["id"], "prioridad"] = prioridad
-            tareas.loc[tareas["id"] == task["id"], "area"] = area
-            tareas.loc[tareas["id"] == task["id"], "fecha_inicio"] = str(fecha_inicio) if fecha_inicio else ""
-            tareas.loc[tareas["id"] == task["id"], "fecha"] = str(fecha_fin) if fecha_fin else ""
-            tareas.loc[tareas["id"] == task["id"], "notas"] = notas_txt
-            tareas.loc[tareas["id"] == task["id"], "etiqueta"] = etiqueta
-            tareas.loc[tareas["id"] == task["id"], "subtareas"] = _save_subtareas(merged_subs) if merged_subs else ""
-            save_df("tareas", tareas)
-            st.session_state["task_detail_editing"] = False
-            st.rerun()
+                tareas.loc[tareas["id"] == task["id"], "titulo"] = titulo.strip()
+                tareas.loc[tareas["id"] == task["id"], "prioridad"] = prioridad
+                tareas.loc[tareas["id"] == task["id"], "area"] = area
+                tareas.loc[tareas["id"] == task["id"], "fecha_inicio"] = str(fecha_inicio) if fecha_inicio else ""
+                tareas.loc[tareas["id"] == task["id"], "fecha"] = str(fecha_fin) if fecha_fin else ""
+                tareas.loc[tareas["id"] == task["id"], "notas"] = notas_txt
+                tareas.loc[tareas["id"] == task["id"], "etiqueta"] = etiqueta
+                tareas.loc[tareas["id"] == task["id"], "subtareas"] = _save_subtareas(merged_subs) if merged_subs else ""
+                save_df("tareas", tareas)
+                st.session_state["task_detail_editing"] = False
+                st.rerun()
         if cancelled:
             st.session_state["task_detail_editing"] = False
             st.rerun()
@@ -819,20 +828,23 @@ def _render_project_form(proyectos):
         cancelled = col_c.form_submit_button("Cancelar")
 
         if submitted and nombre.strip():
-            new_row = {
-                "id": edit_id or uid(), "nombre": nombre.strip(), "area": area,
-                "emoji": emoji or "📁", "desc": desc, "estado": estado,
-                "fecha_inicio": str(fecha_inicio) if fecha_inicio else "",
-                "fecha_fin": str(fecha_fin) if fecha_fin else "",
-                "plantilla": False, "compartido": compartido, "ts": now_ts(),
-            }
-            if edit_id and not proyectos.empty:
-                proyectos = proyectos[proyectos["id"] != edit_id]
-            new_df = pd.concat([pd.DataFrame([new_row]), proyectos], ignore_index=True)
-            save_df("proyectos", new_df)
-            st.session_state["proj_editing"] = False
-            st.session_state["proj_edit_id"] = None
-            st.rerun()
+            if fecha_inicio and fecha_fin and fecha_inicio > fecha_fin:
+                st.error("La fecha de inicio no puede ser mayor a la fecha fin.")
+            else:
+                new_row = {
+                    "id": edit_id or uid(), "nombre": nombre.strip(), "area": area,
+                    "emoji": emoji or "📁", "desc": desc, "estado": estado,
+                    "fecha_inicio": str(fecha_inicio) if fecha_inicio else "",
+                    "fecha_fin": str(fecha_fin) if fecha_fin else "",
+                    "plantilla": False, "compartido": compartido, "ts": now_ts(),
+                }
+                if edit_id and not proyectos.empty:
+                    proyectos = proyectos[proyectos["id"] != edit_id]
+                new_df = pd.concat([pd.DataFrame([new_row]), proyectos], ignore_index=True)
+                save_df("proyectos", new_df)
+                st.session_state["proj_editing"] = False
+                st.session_state["proj_edit_id"] = None
+                st.rerun()
         if cancelled:
             st.session_state["proj_editing"] = False
             st.session_state["proj_edit_id"] = None

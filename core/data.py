@@ -23,6 +23,7 @@ SCHEMAS = {
     "metas": {"id": str, "titulo": str, "tipo": str, "periodo": str, "objetivo": str, "progreso": float, "completada": bool, "proyecto_id": str, "ts": float},
     "tx_recurrentes": {"id": str, "type": str, "desc": str, "amt": float, "cat": str, "frecuencia": str, "dia": int, "activa": bool, "ts": float},
     "budget": {"cat": str, "amt": float},
+    "papelera": {"id": str, "tipo": str, "nombre": str, "data": str, "deleted_ts": float},
 }
 
 
