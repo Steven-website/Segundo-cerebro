@@ -1,6 +1,7 @@
 import os
 import uuid
 import time
+import base64
 import pandas as pd
 import streamlit as st
 
@@ -40,12 +41,41 @@ def _parquet_path(name):
     return os.path.join(_get_user_dir(), f"{name}.parquet")
 
 
+def _pull_from_github(name):
+    """Download a parquet file from GitHub if it doesn't exist locally."""
+    try:
+        token = st.secrets.get("github_token", "")
+        repo_name = st.secrets.get("github_repo", "")
+    except Exception:
+        return False
+    if not token or not repo_name:
+        return False
+    try:
+        from github import Github
+        g = Github(token)
+        repo = g.get_repo(repo_name)
+        user = st.session_state.get("current_user", "default")
+        path_in_repo = f"data/{user}/{name}.parquet"
+        contents = repo.get_contents(path_in_repo)
+        data = base64.b64decode(contents.content)
+        local_path = _parquet_path(name)
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        with open(local_path, "wb") as f:
+            f.write(data)
+        return True
+    except Exception:
+        return False
+
+
 def load_df(name):
     user = st.session_state.get("current_user", "default")
     key = f"df_{user}_{name}"
     if key in st.session_state:
         return st.session_state[key]
     path = _parquet_path(name)
+    # If local file doesn't exist, try to pull from GitHub
+    if not os.path.exists(path):
+        _pull_from_github(name)
     if os.path.exists(path):
         try:
             df = pd.read_parquet(path)
@@ -76,11 +106,8 @@ def save_df(name, df):
     st.session_state[key] = df
     os.makedirs(_get_user_dir(), exist_ok=True)
     df.to_parquet(_parquet_path(name), index=False)
-    # Debounce: only push to GitHub every 30 seconds
-    last_push = st.session_state.get("_last_github_push", 0)
-    if time.time() - last_push > 30:
-        _push_to_github(name)
-        st.session_state["_last_github_push"] = time.time()
+    # Push to GitHub immediately on save
+    _push_to_github(name)
 
 
 def _push_to_github(name):

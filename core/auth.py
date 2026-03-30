@@ -12,7 +12,32 @@ def _is_valid_email(email):
 USERS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "users.json")
 
 
+def _pull_users_from_github():
+    """Download users.json from GitHub if local file doesn't exist."""
+    try:
+        token = st.secrets.get("github_token", "")
+        repo_name = st.secrets.get("github_repo", "")
+    except Exception:
+        return
+    if not token or not repo_name:
+        return
+    try:
+        from github import Github
+        import base64
+        g = Github(token)
+        repo = g.get_repo(repo_name)
+        contents = repo.get_contents("data/users.json")
+        data = base64.b64decode(contents.content)
+        os.makedirs(os.path.dirname(USERS_FILE), exist_ok=True)
+        with open(USERS_FILE, "wb") as f:
+            f.write(data)
+    except Exception:
+        pass
+
+
 def _load_users():
+    if not os.path.exists(USERS_FILE):
+        _pull_users_from_github()
     if os.path.exists(USERS_FILE):
         try:
             with open(USERS_FILE, "r") as f:
