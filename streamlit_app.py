@@ -93,7 +93,6 @@ PAGES = [
     "🎤 Audios",
     "🍅 Pomodoro",
     "📊 Reportes",
-    "🤖 Buscar con IA",
     "💾 Backup & Importar",
     "👤 Perfil",
 ]
@@ -167,8 +166,6 @@ elif page == "🍅 Pomodoro":
     from modules.pomodoro import render
 elif page == "📊 Reportes":
     from modules.reportes import render
-elif page == "🤖 Buscar con IA":
-    from modules.ia import render
 elif page == "💾 Backup & Importar":
     from modules.backup import render
 elif page == "👤 Perfil":
