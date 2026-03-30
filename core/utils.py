@@ -19,7 +19,26 @@ def parse_checks(data):
 def is_done_today(habit):
     today_str = datetime.now().strftime("%Y-%m-%d")
     checks = parse_checks(habit.get("checks", "{}"))
-    return checks.get(today_str, False)
+    val = checks.get(today_str, False)
+    if isinstance(val, dict):
+        # Sub-checks: done if all are True
+        return all(val.values()) if val else False
+    return val
+
+
+def get_day_completion(habit, date_str):
+    """Return (done_count, total_count) for a day. Supports sub-checks."""
+    checks = parse_checks(habit.get("checks", "{}"))
+    reps = [r.strip() for r in habit.get("repeticiones", "").split(",") if r.strip()]
+    val = checks.get(date_str, False)
+    if reps:
+        if isinstance(val, dict):
+            done = sum(1 for r in reps if val.get(r, False))
+            return done, len(reps)
+        elif val is True:
+            return len(reps), len(reps)
+        return 0, len(reps)
+    return (1 if val else 0), 1
 
 
 def get_area_id(label):

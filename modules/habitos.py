@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timedelta
 from core.data import get_df, save_df, uid, now_ts
 from core.constants import HABIT_CATS, HABIT_FREQ
-from core.utils import parse_checks, is_done_today, confirm_delete, export_csv
+from core.utils import parse_checks, is_done_today, get_day_completion, confirm_delete, export_csv
 import calendar
 
 
@@ -16,13 +16,30 @@ STREAK_MILESTONES = [
 ]
 
 
-def _calc_streak(h):
+def _is_day_complete(h, date_str):
+    """Check if a day is fully complete (supports sub-checks)."""
     checks = parse_checks(h.get("checks", "{}"))
+    reps = [r.strip() for r in h.get("repeticiones", "").split(",") if r.strip()]
+    val = checks.get(date_str, False)
+    if reps:
+        if isinstance(val, dict):
+            return all(val.get(r, False) for r in reps)
+        return val is True
+    return bool(val)
+
+
+def _day_pct(h, date_str):
+    """Get completion percentage for a day."""
+    done, total = get_day_completion(h, date_str)
+    return done / total if total > 0 else 0
+
+
+def _calc_streak(h):
     streak = 0
     day = datetime.now()
     while True:
         ds = day.strftime("%Y-%m-%d")
-        if checks.get(ds, False):
+        if _is_day_complete(h, ds):
             streak += 1
             day -= timedelta(days=1)
         else:
@@ -41,18 +58,24 @@ def _get_streak_badge(streak):
     return "", ""
 
 
-def _calc_max_streak(checks_dict):
-    if not checks_dict:
+def _calc_max_streak(h):
+    """Calculate max streak considering sub-checks."""
+    checks = parse_checks(h.get("checks", "{}")) if isinstance(h, (dict, pd.Series)) else {}
+    if not checks:
         return 0
-    dates = sorted([d for d, v in checks_dict.items() if v])
-    if not dates:
+    # Get all fully completed dates
+    completed_dates = []
+    for ds in sorted(checks.keys()):
+        if _is_day_complete(h, ds):
+            completed_dates.append(ds)
+    if not completed_dates:
         return 0
     max_streak = 1
     current = 1
-    for i in range(1, len(dates)):
+    for i in range(1, len(completed_dates)):
         try:
-            d1 = datetime.strptime(dates[i - 1], "%Y-%m-%d")
-            d2 = datetime.strptime(dates[i], "%Y-%m-%d")
+            d1 = datetime.strptime(completed_dates[i - 1], "%Y-%m-%d")
+            d2 = datetime.strptime(completed_dates[i], "%Y-%m-%d")
             if (d2 - d1).days == 1:
                 current += 1
                 max_streak = max(max_streak, current)
@@ -63,15 +86,20 @@ def _calc_max_streak(checks_dict):
     return max_streak
 
 
-def _get_month_stats(checks_dict, year, month):
+def _get_month_stats(h, year, month):
+    """Get month stats considering sub-checks."""
     prefix = f"{year}-{month:02d}"
     days_in_month = calendar.monthrange(year, month)[1]
-    done_days = sum(1 for k, v in checks_dict.items() if k.startswith(prefix) and v)
     today = datetime.now()
     if year == today.year and month == today.month:
         total_days = today.day
     else:
         total_days = days_in_month
+    done_days = 0
+    for day_num in range(1, total_days + 1):
+        ds = f"{year}-{month:02d}-{day_num:02d}"
+        if _is_day_complete(h, ds):
+            done_days += 1
     pct = int(done_days / total_days * 100) if total_days > 0 else 0
     return done_days, total_days, pct
 
@@ -121,6 +149,13 @@ def _render_habits_list(habitos):
             freq = c4.selectbox("Frecuencia", freq_keys, format_func=lambda x: HABIT_FREQ[x],
                                 index=freq_keys.index(existing["freq"]) if existing is not None and existing["freq"] in freq_keys else 0)
 
+            repeticiones = st.text_input(
+                "Repeticiones por dia (opcional, separadas por coma)",
+                value=existing.get("repeticiones", "") if existing is not None else "",
+                placeholder="Ej: mañana,tarde,noche",
+                help="Si el habito se repite varias veces al dia, escribe las repeticiones separadas por coma. Solo cuenta como completado si cumples todas.",
+            )
+
             col_s, col_c = st.columns(2)
             submitted = col_s.form_submit_button("Guardar", type="primary")
             cancelled = col_c.form_submit_button("Cancelar")
@@ -131,6 +166,7 @@ def _render_habits_list(habitos):
                     "cat": cat, "freq": freq,
                     "checks": existing["checks"] if existing is not None else "{}",
                     "streak": existing["streak"] if existing is not None else 0,
+                    "repeticiones": repeticiones.strip(),
                     "ts": now_ts(),
                 }
                 if edit_id and not habitos.empty:
@@ -183,39 +219,82 @@ def _render_habits_list(habitos):
                     day = datetime.now() - timedelta(days=d)
                     ds = day.strftime("%Y-%m-%d")
                     day_name = day.strftime("%a")[0]
-                    done = checks.get(ds, False)
                     is_today = ds == today_str
-                    days.append((day_name, done, is_today, ds))
+                    full = _is_day_complete(h, ds)
+                    partial = _day_pct(h, ds)
+                    days.append((day_name, full, partial, is_today, ds))
 
                 day_cols = st.columns(7)
-                for j, (day_name, done, is_today, ds) in enumerate(days):
+                for j, (day_name, full, partial, is_today, ds) in enumerate(days):
                     with day_cols[j]:
-                        if done:
+                        if full:
                             st.markdown(f"**:green[{day_name}]**")
+                        elif partial > 0:
+                            st.markdown(f"**:orange[{day_name}]**")
                         elif is_today:
                             st.markdown(f"**:orange[{day_name}]**")
                         else:
                             st.markdown(f"*{day_name}*")
 
                 # Today toggle + streak
-                c_toggle, c_streak = st.columns([3, 1])
-                with c_toggle:
-                    new_done = st.checkbox(
-                        "Hecho hoy" if not done_today else "Completado",
-                        value=done_today,
-                        key=f"htoggle_{h['id']}",
-                    )
-                    if new_done != done_today:
-                        checks[today_str] = new_done
-                        habitos.loc[habitos["id"] == h["id"], "checks"] = json.dumps(checks)
-                        habitos.loc[habitos["id"] == h["id"], "streak"] = _calc_streak({"checks": json.dumps(checks)})
-                        save_df("habitos", habitos)
-                        st.rerun()
-                with c_streak:
-                    badge, badge_label = _get_streak_badge(streak)
-                    st.metric("Racha", f"\U0001f525 {streak}")
-                    if badge:
-                        st.caption(f"{badge} {badge_label}")
+                reps = [r.strip() for r in h.get("repeticiones", "").split(",") if r.strip()]
+
+                if reps:
+                    # Sub-checks mode
+                    today_val = checks.get(today_str, {})
+                    if not isinstance(today_val, dict):
+                        today_val = {r: bool(today_val) for r in reps}
+
+                    done_count, total_count = get_day_completion(h, today_str)
+                    pct_today = int(done_count / total_count * 100) if total_count > 0 else 0
+
+                    rep_cols = st.columns(len(reps) + 1)
+                    for ri, rep in enumerate(reps):
+                        with rep_cols[ri]:
+                            rep_done = today_val.get(rep, False)
+                            new_val = st.checkbox(
+                                rep.capitalize(),
+                                value=rep_done,
+                                key=f"hrep_{h['id']}_{ri}",
+                            )
+                            if new_val != rep_done:
+                                today_val[rep] = new_val
+                                checks[today_str] = today_val
+                                habitos.loc[habitos["id"] == h["id"], "checks"] = json.dumps(checks)
+                                h_updated = dict(h)
+                                h_updated["checks"] = json.dumps(checks)
+                                habitos.loc[habitos["id"] == h["id"], "streak"] = _calc_streak(h_updated)
+                                save_df("habitos", habitos)
+                                st.rerun()
+                    with rep_cols[-1]:
+                        badge, badge_label = _get_streak_badge(streak)
+                        st.metric("Racha", f"\U0001f525 {streak}")
+                        if badge:
+                            st.caption(f"{badge} {badge_label}")
+
+                    st.progress(pct_today / 100, text=f"Hoy: {done_count}/{total_count} ({pct_today}%)")
+                else:
+                    # Simple mode (single checkbox)
+                    c_toggle, c_streak = st.columns([3, 1])
+                    with c_toggle:
+                        new_done = st.checkbox(
+                            "Hecho hoy" if not done_today else "Completado",
+                            value=done_today,
+                            key=f"htoggle_{h['id']}",
+                        )
+                        if new_done != done_today:
+                            checks[today_str] = new_done
+                            habitos.loc[habitos["id"] == h["id"], "checks"] = json.dumps(checks)
+                            h_updated = dict(h)
+                            h_updated["checks"] = json.dumps(checks)
+                            habitos.loc[habitos["id"] == h["id"], "streak"] = _calc_streak(h_updated)
+                            save_df("habitos", habitos)
+                            st.rerun()
+                    with c_streak:
+                        badge, badge_label = _get_streak_badge(streak)
+                        st.metric("Racha", f"\U0001f525 {streak}")
+                        if badge:
+                            st.caption(f"{badge} {badge_label}")
 
 
 def _render_stats(habitos):
@@ -239,8 +318,7 @@ def _render_stats(habitos):
     all_done = 0
     all_total = 0
     for _, h in habitos.iterrows():
-        checks = parse_checks(h.get("checks", "{}"))
-        done_days, total_days, _ = _get_month_stats(checks, year, month)
+        done_days, total_days, _ = _get_month_stats(h, year, month)
         all_done += done_days
         all_total += total_days
 
@@ -256,8 +334,8 @@ def _render_stats(habitos):
     # Per-habit monthly view
     for _, h in habitos.iterrows():
         checks = parse_checks(h.get("checks", "{}"))
-        done_days, total_days, pct = _get_month_stats(checks, year, month)
-        max_streak = _calc_max_streak(checks)
+        done_days, total_days, pct = _get_month_stats(h, year, month)
+        max_streak = _calc_max_streak(h)
         current_streak = _calc_streak(h)
 
         hab_emoji = h.get("emoji", "\u2b50")
@@ -301,10 +379,14 @@ def _render_stats(habitos):
                             st.markdown("")
                         elif day_num <= days_in_month:
                             ds = f"{year}-{month:02d}-{day_num:02d}"
-                            done = checks.get(ds, False)
+                            full = _is_day_complete(h, ds)
+                            partial = _day_pct(h, ds)
                             is_today = ds == today_str
-                            if done:
+                            if full:
                                 st.markdown(f":green[**{day_num}** ✓]")
+                            elif partial > 0:
+                                pct_label = int(partial * 100)
+                                st.markdown(f":orange[**{day_num}** {pct_label}%]")
                             elif is_today:
                                 st.markdown(f":orange[**{day_num}**]")
                             else:
@@ -323,12 +405,12 @@ def _render_stats(habitos):
 
     for _, h in habitos.iterrows():
         checks = parse_checks(h.get("checks", "{}"))
-        for ds, done in checks.items():
+        for ds in checks.keys():
             try:
                 dt = datetime.strptime(ds, "%Y-%m-%d")
                 day_name = day_names[dt.weekday()]
                 day_totals[day_name] += 1
-                if done:
+                if _is_day_complete(h, ds):
                     day_counts[day_name] += 1
             except ValueError:
                 pass
