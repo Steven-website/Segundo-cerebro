@@ -62,15 +62,25 @@ def render():
             if not matches.empty:
                 existing = matches.iloc[0]
 
+        proyectos = get_df("proyectos")
         with st.form("nota_form", clear_on_submit=True):
             st.subheader("Editar nota" if existing is not None else "Nueva nota")
             titulo = st.text_input("Titulo", value=existing["titulo"] if existing is not None else "")
+            c_area, c_proj = st.columns(2)
             area_ids = [a["id"] for a in AREAS]
-            area = st.selectbox(
+            area = c_area.selectbox(
                 "Area", area_ids,
                 format_func=lambda x: AREA_LABELS.get(x, x),
                 index=area_ids.index(existing["area"]) if existing is not None and existing["area"] in area_ids else 0,
             )
+            proj_options = [""] + (proyectos["id"].tolist() if not proyectos.empty else [])
+            proj_labels = ["Sin proyecto"] + (proyectos["nombre"].tolist() if not proyectos.empty else [])
+            proj_idx = 0
+            if existing is not None and existing.get("proyecto", "") in proj_options:
+                proj_idx = proj_options.index(existing["proyecto"])
+            proyecto = c_proj.selectbox("Proyecto", proj_options,
+                                        format_func=lambda x: proj_labels[proj_options.index(x)] if x in proj_options else x,
+                                        index=proj_idx)
             tags = st.text_input("Tags (separados por coma)", value=existing["tags"] if existing is not None else "")
             body = st.text_area("Contenido (soporta Markdown)", value=existing["body"] if existing is not None else "", height=200)
 
@@ -85,6 +95,7 @@ def render():
                     "area": area,
                     "tags": tags,
                     "body": body,
+                    "proyecto": proyecto,
                     "pinned": existing.get("pinned", False) if existing is not None else False,
                     "archived": existing.get("archived", False) if existing is not None else False,
                     "ts": now_ts(),

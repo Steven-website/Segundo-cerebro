@@ -8,9 +8,9 @@ import streamlit as st
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 
 SCHEMAS = {
-    "notas": {"id": str, "titulo": str, "area": str, "tags": str, "body": str, "pinned": bool, "archived": bool, "ts": float},
+    "notas": {"id": str, "titulo": str, "area": str, "tags": str, "body": str, "proyecto": str, "pinned": bool, "archived": bool, "ts": float},
     "tareas": {"id": str, "titulo": str, "area": str, "prioridad": str, "fecha": str, "proyecto": str, "notas": str, "subtareas": str, "recurrente": str, "depende_de": str, "done": bool, "pinned": bool, "archived": bool, "ts": float},
-    "proyectos": {"id": str, "nombre": str, "area": str, "emoji": str, "desc": str, "plantilla": bool, "compartido": str, "ts": float},
+    "proyectos": {"id": str, "nombre": str, "area": str, "emoji": str, "desc": str, "estado": str, "fecha_inicio": str, "fecha_fin": str, "plantilla": bool, "compartido": str, "ts": float},
     "txs": {"id": str, "type": str, "desc": str, "amt": float, "cat": str, "fecha": str, "ts": float},
     "savings": {"id": str, "name": str, "goal": float, "current": float, "date": str, "ts": float},
     "debts": {"id": str, "name": str, "total": float, "paid": float, "rate": float, "due": str, "ts": float},
