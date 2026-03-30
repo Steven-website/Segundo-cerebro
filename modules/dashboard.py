@@ -53,7 +53,6 @@ def render():
         show_metas = st.checkbox("Metas activas", value=st.session_state.get("dash_metas", True), key="dash_metas")
         show_pomo = st.checkbox("Pomodoro de hoy", value=st.session_state.get("dash_pomo", True), key="dash_pomo")
 
-    notas = get_df("notas")
     tareas = get_df("tareas")
     habitos = get_df("habitos")
     txs = get_df("txs")
@@ -69,7 +68,8 @@ def render():
         balance = inc - exp
 
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Notas", len(notas))
+        proyectos_df = get_df("proyectos")
+        c1.metric("Proyectos", len(proyectos_df))
         c2.metric("Tareas pendientes", pending, help=f"{completed} completadas")
         c3.metric("Habitos hoy", f"{habs_done}/{len(today_habs)}")
         c4.metric("Balance del mes", fmt(balance), delta=f"{fmt(inc)} ingresos" if inc > 0 else None)
@@ -185,8 +185,6 @@ def render():
         with col_left:
             st.subheader("Actividad reciente")
             activities = []
-            for _, n in notas.iterrows():
-                activities.append({"icon": "📝", "name": n["titulo"], "type": "nota", "ts": n["ts"]})
             for _, t in tareas.iterrows():
                 activities.append({"icon": "✅" if t["done"] else "⬜", "name": t["titulo"], "type": "tarea", "ts": t["ts"]})
             for _, p in proyectos.iterrows():

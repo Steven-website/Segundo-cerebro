@@ -82,9 +82,8 @@ def show_alerts():
 PAGES = [
     "◈ Dashboard",
     "🔍 Buscar",
-    "◻ Notas",
-    "◷ Tareas",
     "◈ Proyectos",
+    "◷ Tareas",
     "🎯 Metas",
     "₡ Finanzas",
     "◎ Ahorros & Deudas",
@@ -146,8 +145,6 @@ if page == "◈ Dashboard":
     from modules.dashboard import render
 elif page == "🔍 Buscar":
     from modules.buscar import render
-elif page == "◻ Notas":
-    from modules.notas import render
 elif page == "◷ Tareas":
     from modules.tareas import render
 elif page == "◈ Proyectos":
