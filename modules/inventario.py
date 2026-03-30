@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime, timedelta
 from core.data import get_df, save_df, uid, now_ts
 from core.constants import INV_CATS, INV_CAT_ICONS, INV_STATUS, fmt
 from core.utils import confirm_delete, export_csv
@@ -51,8 +52,10 @@ def render():
             status = c7.selectbox("Estado", status_opts, format_func=lambda x: f"{INV_STATUS.get(x, '')} {x.capitalize()}",
                                   index=status_opts.index(existing["status"]) if existing is not None and existing.get("status") in status_opts else 0)
 
-            date = st.date_input("Fecha de compra (opcional)", value=None)
-            notes = st.text_input("Notas (serial, garantia, etc.)", value=existing.get("notes", "") if existing is not None else "")
+            c8, c9 = st.columns(2)
+            date = c8.date_input("Fecha de compra (opcional)", value=None)
+            garantia = c9.date_input("Vencimiento garantia (opcional)", value=None)
+            notes = st.text_input("Notas (serial, etc.)", value=existing.get("notes", "") if existing is not None else "")
 
             col_s, col_c = st.columns(2)
             submitted = col_s.form_submit_button("Guardar", type="primary")
@@ -63,6 +66,7 @@ def render():
                     "id": edit_id or uid(), "name": name.strip(), "cat": cat,
                     "emoji": emoji or "\U0001f4e6", "val": val, "qty": qty,
                     "loc": loc, "date": str(date) if date else "",
+                    "garantia": str(garantia) if garantia else "",
                     "notes": notes, "status": status, "ts": now_ts(),
                 }
                 if edit_id and not inventario.empty:
@@ -83,6 +87,27 @@ def render():
             filtered = filtered[filtered["cat"] == cat_filter]
         if search:
             filtered = filtered[filtered["name"].str.contains(search, case=False, na=False)]
+
+    # --- Warranty alerts ---
+    if not inventario.empty:
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        soon = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+        warranty_alerts = []
+        for _, item in inventario.iterrows():
+            g = item.get("garantia", "")
+            if g:
+                if g < today_str:
+                    warranty_alerts.append((item, "vencida"))
+                elif g <= soon:
+                    warranty_alerts.append((item, "pronto"))
+        if warranty_alerts:
+            with st.expander(f"Alertas de garantia ({len(warranty_alerts)})", expanded=True):
+                for item, status in warranty_alerts:
+                    emoji = item.get("emoji", "\U0001f4e6")
+                    if status == "vencida":
+                        st.error(f"{emoji} **{item['name']}** - Garantia vencida ({item['garantia']})")
+                    else:
+                        st.warning(f"{emoji} **{item['name']}** - Garantia vence pronto ({item['garantia']})")
 
     # --- Summary ---
     if not inventario.empty:
@@ -113,6 +138,14 @@ def render():
                 c1, c2 = st.columns(2)
                 c1.markdown(f"**{fmt(item['val'])}** x{item['qty']}")
                 c2.markdown(f"{status_icon} {item.get('status', 'bueno').capitalize()}")
+
+                if item.get("garantia"):
+                    g = item["garantia"]
+                    today_str = datetime.now().strftime("%Y-%m-%d")
+                    if g < today_str:
+                        st.caption(f"Garantia: {g} (vencida)")
+                    else:
+                        st.caption(f"Garantia: {g}")
 
                 if item.get("notes"):
                     st.caption(item["notes"])
