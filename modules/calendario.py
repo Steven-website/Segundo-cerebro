@@ -13,6 +13,15 @@ def render():
     habitos = get_df("habitos")
     proyectos = get_df("proyectos")
 
+    # --- View toggle ---
+    col_view, _ = st.columns([1, 5])
+    with col_view:
+        cal_view = st.selectbox("Vista", ["Mensual", "Semanal"], key="cal_view_mode", label_visibility="collapsed")
+
+    if cal_view == "Semanal":
+        _render_weekly(tareas, habitos, proyectos)
+        return
+
     # --- Month navigation ---
     if "cal_offset" not in st.session_state:
         st.session_state["cal_offset"] = 0
@@ -211,3 +220,110 @@ def render():
                 st.markdown(f"{status} {emoji} {h['name']}")
         else:
             st.caption("Sin habitos configurados.")
+
+
+def _render_weekly(tareas, habitos, proyectos):
+    """Render a weekly calendar view with detailed daily breakdown."""
+    if "week_offset" not in st.session_state:
+        st.session_state["week_offset"] = 0
+
+    today = datetime.now()
+    # Calculate Monday of current week + offset
+    monday = today - timedelta(days=today.weekday()) + timedelta(weeks=st.session_state["week_offset"])
+    sunday = monday + timedelta(days=6)
+
+    col_prev, col_title, col_next, col_today = st.columns([1, 3, 1, 1])
+    with col_prev:
+        if st.button("\u25c0 Anterior", key="week_prev"):
+            st.session_state["week_offset"] -= 1
+            st.rerun()
+    with col_title:
+        st.subheader(f"{monday.strftime('%d/%m')} — {sunday.strftime('%d/%m/%Y')}")
+    with col_next:
+        if st.button("Siguiente \u25b6", key="week_next"):
+            st.session_state["week_offset"] += 1
+            st.rerun()
+    with col_today:
+        if st.button("Esta semana", key="week_today"):
+            st.session_state["week_offset"] = 0
+            st.rerun()
+
+    # Weekly summary
+    week_dates = [monday + timedelta(days=i) for i in range(7)]
+    week_strs = [d.strftime("%Y-%m-%d") for d in week_dates]
+    today_str = today.strftime("%Y-%m-%d")
+
+    total_tasks = 0
+    total_done = 0
+    total_habits = 0
+    if not tareas.empty:
+        for ds in week_strs:
+            day_tasks = tareas[tareas["fecha"] == ds]
+            total_tasks += len(day_tasks)
+            total_done += int(day_tasks["done"].sum()) if not day_tasks.empty else 0
+
+    if not habitos.empty:
+        for ds in week_strs:
+            for _, h in habitos.iterrows():
+                checks = parse_checks(h.get("checks", "{}"))
+                if checks.get(ds, False):
+                    total_habits += 1
+
+    sc1, sc2, sc3 = st.columns(3)
+    sc1.metric("Tareas de la semana", total_tasks, help=f"{total_done} completadas")
+    sc2.metric("Completadas", total_done)
+    sc3.metric("Habitos cumplidos", total_habits)
+
+    st.divider()
+
+    # Render each day
+    day_names = ["Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado", "Domingo"]
+    for i, (day_date, ds) in enumerate(zip(week_dates, week_strs)):
+        is_today = ds == today_str
+        day_name = day_names[i]
+        day_num = day_date.strftime("%d/%m")
+
+        header = f"{'**:orange[' if is_today else ''}{day_name} {day_num}{']**' if is_today else ''}"
+        if not is_today:
+            header = f"**{day_name} {day_num}**"
+
+        with st.expander(header, expanded=is_today):
+            # Tasks for this day
+            day_tasks = tareas[tareas["fecha"] == ds] if not tareas.empty else pd.DataFrame()
+            overdue_tasks = tareas[(~tareas["done"]) & (tareas["fecha"] != "") & (tareas["fecha"] < ds) & (tareas["fecha"] >= monday.strftime("%Y-%m-%d"))] if not tareas.empty and ds == today_str else pd.DataFrame()
+
+            if not day_tasks.empty or (not overdue_tasks.empty and ds == today_str):
+                st.markdown("**Tareas:**")
+                for _, t in day_tasks.iterrows():
+                    pri = PRIORITY_EMOJIS.get(t["prioridad"], "\u26aa")
+                    status = "\u2705" if t["done"] else "\u2b1c"
+                    proj_name = ""
+                    if t.get("proyecto") and not proyectos.empty:
+                        proj_match = proyectos[proyectos["id"] == t["proyecto"]]
+                        if not proj_match.empty:
+                            proj_name = f" — 📂 {proj_match.iloc[0]['nombre']}"
+                    style = "~~" if t["done"] else ""
+                    st.markdown(f"{status} {pri} {style}{t['titulo']}{style}{proj_name}")
+            else:
+                st.caption("Sin tareas")
+
+            # Habits for this day
+            if not habitos.empty:
+                dow = day_date.weekday()
+                day_habs = []
+                for _, h in habitos.iterrows():
+                    freq = h.get("freq", "diario")
+                    if freq == "laborables" and dow >= 5:
+                        continue
+                    if freq == "fines" and dow < 5:
+                        continue
+                    day_habs.append(h)
+
+                if day_habs:
+                    st.markdown("**Habitos:**")
+                    for h in day_habs:
+                        checks = parse_checks(h.get("checks", "{}"))
+                        done = checks.get(ds, False)
+                        emoji = h.get("emoji", "\u2b50")
+                        status = "\u2705" if done else "\u2b1c"
+                        st.markdown(f"{status} {emoji} {h['name']}")
