@@ -46,13 +46,12 @@ def _auto_generate_recurring(txs):
                     dates_to_check.append(target)
         elif freq == "semanal":
             # Check all matching weekdays this month up to today
+            from datetime import timedelta
             d = date(today.year, today.month, 1)
             while d <= today:
                 if d.isoweekday() == min(dia, 7):
                     dates_to_check.append(d)
-                d = d.replace(day=d.day + 1) if d.day < 28 else d
-                if d.day >= 28:
-                    break
+                d += timedelta(days=1)
 
         for target_date in dates_to_check:
             target_str = str(target_date)

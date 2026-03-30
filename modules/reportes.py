@@ -312,15 +312,15 @@ def _render_balance():
 def _pdf_export_button(filename):
     """Generate a simple text-based report as downloadable file."""
     st.divider()
-    if st.button("Descargar reporte (TXT)", key=f"pdf_{filename}", use_container_width=True):
-        report = _generate_text_report()
-        st.download_button(
-            "Descargar",
-            report.encode("utf-8"),
-            f"{filename}.txt",
-            "text/plain",
-            key=f"dl_{filename}",
-        )
+    report = _generate_text_report()
+    st.download_button(
+        "Descargar reporte (TXT)",
+        report.encode("utf-8"),
+        f"{filename}.txt",
+        "text/plain",
+        key=f"dl_{filename}",
+        use_container_width=True,
+    )
 
 
 def _generate_text_report():

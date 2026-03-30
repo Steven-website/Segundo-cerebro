@@ -57,6 +57,9 @@ def render():
 
     username = st.session_state.get("current_user", "")
     users = _load_users()
+    if username not in users:
+        st.error("Usuario no encontrado. Cierra sesion e ingresa de nuevo.")
+        return
     user_data = users.get(username, {})
 
     st.subheader(f"Usuario: {username}")
