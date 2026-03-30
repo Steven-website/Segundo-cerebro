@@ -71,6 +71,14 @@ def check_token_login():
     if not token:
         return False
     users = _load_users()
+    # Ensure all users have tokens
+    changed = False
+    for u in users:
+        if "token" not in users[u]:
+            users[u]["token"] = _generate_token()
+            changed = True
+    if changed:
+        _save_users(users)
     for username, data in users.items():
         if data.get("token") == token:
             st.session_state["logged_in"] = True
