@@ -185,48 +185,81 @@ def _render_habits_list(habitos):
         st.info("No hay habitos configurados.")
         return
 
-    cols = st.columns(2)
-    for i, (idx, h) in enumerate(habitos.iterrows()):
-        with cols[i % 2]:
-            checks = parse_checks(h.get("checks", "{}"))
-            today_str = datetime.now().strftime("%Y-%m-%d")
-            done_today = checks.get(today_str, False)
-            streak = _calc_streak(h)
+    for idx, h in habitos.iterrows():
+        checks = parse_checks(h.get("checks", "{}"))
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        streak = _calc_streak(h)
+        hab_emoji = h.get('emoji', '\u2b50')
+        reps = [r.strip() for r in h.get("repeticiones", "").split(",") if r.strip()]
+        badge, badge_label = _get_streak_badge(streak)
 
-            with st.container(border=True):
-                # Header
-                c_emoji, c_name, c_edit, c_del = st.columns([1, 5, 1, 1])
-                with c_emoji:
-                    hab_emoji = h.get('emoji', '\u2b50')
-                    st.markdown(f"### {hab_emoji}")
-                with c_name:
-                    st.markdown(f"**{h['name']}**")
-                    st.caption(f"{HABIT_CATS.get(h['cat'], '')} {h['cat'].capitalize()} \u2022 {HABIT_FREQ.get(h['freq'], h['freq'])}")
-                with c_edit:
-                    if st.button("\u270f\ufe0f", key=f"hedit_{h['id']}"):
-                        st.session_state["hab_editing"] = True
-                        st.session_state["hab_edit_id"] = h["id"]
-                        st.rerun()
-                with c_del:
-                    if confirm_delete(h["id"], h["name"], "hab"):
-                        habitos = habitos[habitos["id"] != h["id"]]
+        with st.container(border=True):
+            if reps:
+                # --- Sub-checks compact layout ---
+                today_val = checks.get(today_str, {})
+                if not isinstance(today_val, dict):
+                    today_val = {r: bool(today_val) for r in reps}
+                done_count, total_count = get_day_completion(h, today_str)
+                pct_today = int(done_count / total_count * 100) if total_count > 0 else 0
+                all_done = done_count == total_count
+
+                col_info, col_streak = st.columns([5, 1])
+                with col_info:
+                    status = "~~" if all_done else ""
+                    st.markdown(f"{hab_emoji} {status}**{h['name']}**{status}  —  {done_count}/{total_count} ({pct_today}%) {badge}")
+                with col_streak:
+                    st.markdown(f"\U0001f525 {streak}")
+
+                rep_cols = st.columns(len(reps))
+                for ri, rep in enumerate(reps):
+                    with rep_cols[ri]:
+                        rep_done = today_val.get(rep, False)
+                        new_val = st.checkbox(rep.capitalize(), value=rep_done, key=f"hrep_{h['id']}_{ri}")
+                        if new_val != rep_done:
+                            today_val[rep] = new_val
+                            checks[today_str] = today_val
+                            habitos.loc[habitos["id"] == h["id"], "checks"] = json.dumps(checks)
+                            h_updated = dict(h)
+                            h_updated["checks"] = json.dumps(checks)
+                            habitos.loc[habitos["id"] == h["id"], "streak"] = _calc_streak(h_updated)
+                            save_df("habitos", habitos)
+                            st.rerun()
+            else:
+                # --- Simple compact layout ---
+                done_today = _is_day_complete(h, today_str)
+                col_check, col_info, col_streak = st.columns([0.5, 5, 1])
+                with col_check:
+                    new_done = st.checkbox("", value=done_today, key=f"htoggle_{h['id']}", label_visibility="collapsed")
+                    if new_done != done_today:
+                        checks[today_str] = new_done
+                        habitos.loc[habitos["id"] == h["id"], "checks"] = json.dumps(checks)
+                        h_updated = dict(h)
+                        h_updated["checks"] = json.dumps(checks)
+                        habitos.loc[habitos["id"] == h["id"], "streak"] = _calc_streak(h_updated)
                         save_df("habitos", habitos)
                         st.rerun()
+                with col_info:
+                    status = "~~" if done_today else ""
+                    st.markdown(f"{hab_emoji} {status}**{h['name']}**{status} {badge}")
+                with col_streak:
+                    st.markdown(f"\U0001f525 {streak}")
+
+            # Expandable details (calendar, edit, delete)
+            with st.expander("Ver mas"):
+                st.caption(f"{HABIT_CATS.get(h['cat'], '')} {h['cat'].capitalize()} \u2022 {HABIT_FREQ.get(h['freq'], h['freq'])}")
+                if badge_label:
+                    st.caption(f"{badge} {badge_label}")
 
                 # Mini calendar (last 7 days)
-                days = []
+                day_cols = st.columns(7)
                 for d in range(6, -1, -1):
                     day = datetime.now() - timedelta(days=d)
                     ds = day.strftime("%Y-%m-%d")
                     day_name = day.strftime("%a")[0]
-                    is_today = ds == today_str
                     full = _is_day_complete(h, ds)
                     partial = _day_pct(h, ds)
-                    days.append((day_name, full, partial, is_today, ds))
-
-                day_cols = st.columns(7)
-                for j, (day_name, full, partial, is_today, ds) in enumerate(days):
-                    with day_cols[j]:
+                    is_today = ds == today_str
+                    with day_cols[6 - d]:
                         if full:
                             st.markdown(f"**:green[{day_name}]**")
                         elif partial > 0:
@@ -236,65 +269,17 @@ def _render_habits_list(habitos):
                         else:
                             st.markdown(f"*{day_name}*")
 
-                # Today toggle + streak
-                reps = [r.strip() for r in h.get("repeticiones", "").split(",") if r.strip()]
-
-                if reps:
-                    # Sub-checks mode
-                    today_val = checks.get(today_str, {})
-                    if not isinstance(today_val, dict):
-                        today_val = {r: bool(today_val) for r in reps}
-
-                    done_count, total_count = get_day_completion(h, today_str)
-                    pct_today = int(done_count / total_count * 100) if total_count > 0 else 0
-
-                    rep_cols = st.columns(len(reps) + 1)
-                    for ri, rep in enumerate(reps):
-                        with rep_cols[ri]:
-                            rep_done = today_val.get(rep, False)
-                            new_val = st.checkbox(
-                                rep.capitalize(),
-                                value=rep_done,
-                                key=f"hrep_{h['id']}_{ri}",
-                            )
-                            if new_val != rep_done:
-                                today_val[rep] = new_val
-                                checks[today_str] = today_val
-                                habitos.loc[habitos["id"] == h["id"], "checks"] = json.dumps(checks)
-                                h_updated = dict(h)
-                                h_updated["checks"] = json.dumps(checks)
-                                habitos.loc[habitos["id"] == h["id"], "streak"] = _calc_streak(h_updated)
-                                save_df("habitos", habitos)
-                                st.rerun()
-                    with rep_cols[-1]:
-                        badge, badge_label = _get_streak_badge(streak)
-                        st.metric("Racha", f"\U0001f525 {streak}")
-                        if badge:
-                            st.caption(f"{badge} {badge_label}")
-
-                    st.progress(pct_today / 100, text=f"Hoy: {done_count}/{total_count} ({pct_today}%)")
-                else:
-                    # Simple mode (single checkbox)
-                    c_toggle, c_streak = st.columns([3, 1])
-                    with c_toggle:
-                        new_done = st.checkbox(
-                            "Hecho hoy" if not done_today else "Completado",
-                            value=done_today,
-                            key=f"htoggle_{h['id']}",
-                        )
-                        if new_done != done_today:
-                            checks[today_str] = new_done
-                            habitos.loc[habitos["id"] == h["id"], "checks"] = json.dumps(checks)
-                            h_updated = dict(h)
-                            h_updated["checks"] = json.dumps(checks)
-                            habitos.loc[habitos["id"] == h["id"], "streak"] = _calc_streak(h_updated)
-                            save_df("habitos", habitos)
-                            st.rerun()
-                    with c_streak:
-                        badge, badge_label = _get_streak_badge(streak)
-                        st.metric("Racha", f"\U0001f525 {streak}")
-                        if badge:
-                            st.caption(f"{badge} {badge_label}")
+                c_edit, c_del = st.columns(2)
+                with c_edit:
+                    if st.button("\u270f\ufe0f Editar", key=f"hedit_{h['id']}", use_container_width=True):
+                        st.session_state["hab_editing"] = True
+                        st.session_state["hab_edit_id"] = h["id"]
+                        st.rerun()
+                with c_del:
+                    if confirm_delete(h["id"], h["name"], "hab"):
+                        habitos = habitos[habitos["id"] != h["id"]]
+                        save_df("habitos", habitos)
+                        st.rerun()
 
 
 def _render_stats(habitos):
