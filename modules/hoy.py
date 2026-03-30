@@ -78,9 +78,20 @@ def _execute_undo(undo):
 
 def render():
     st.header("Hoy")
-    st.caption("Todo lo que tienes pendiente para hoy")
 
     _check_undo()
+
+    tab_pendientes, tab_plan = st.tabs(["Pendientes", "Planificador"])
+
+    with tab_pendientes:
+        _render_pendientes()
+
+    with tab_plan:
+        _render_planificador()
+
+
+def _render_pendientes():
+    st.caption("Todo lo que tienes pendiente para hoy")
 
     today = datetime.now().strftime("%Y-%m-%d")
     tareas = get_df("tareas")
@@ -305,3 +316,151 @@ def _render_today_subtask(sub, tareas):
             if sub["sub_fecha"]:
                 info.append(f"📅 {sub['sub_fecha']}")
             st.caption(" | ".join(info))
+
+
+def _render_planificador():
+    """Daily planner with hourly time blocks."""
+    from core.data import get_df as _get_df, save_df as _save_df, uid as _uid, now_ts as _now_ts
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    tareas = _get_df("tareas")
+    proyectos = _get_df("proyectos")
+    blocks = _get_df("plan_blocks")
+
+    # Auto-move incomplete blocks from previous days
+    if not blocks.empty:
+        past_incomplete = blocks[(blocks["fecha"] < today) & (~blocks["completado"])]
+        if not past_incomplete.empty:
+            moved = 0
+            for _, b in past_incomplete.iterrows():
+                blocks.loc[blocks["id"] == b["id"], "fecha"] = today
+                moved += 1
+                # Also move linked task due date
+                if b["tarea_id"] and not tareas.empty:
+                    task_match = tareas[tareas["id"] == b["tarea_id"]]
+                    if not task_match.empty and not task_match.iloc[0]["done"]:
+                        tareas.loc[tareas["id"] == b["tarea_id"], "fecha"] = today
+            if moved > 0:
+                _save_df("plan_blocks", blocks)
+                _save_df("tareas", tareas)
+                st.info(f"{moved} bloque(s) pendiente(s) movido(s) a hoy.")
+
+    today_blocks = blocks[blocks["fecha"] == today].sort_values("hora") if not blocks.empty else pd.DataFrame()
+
+    # Summary
+    total_blocks = len(today_blocks) if not today_blocks.empty else 0
+    done_blocks = int(today_blocks["completado"].sum()) if not today_blocks.empty else 0
+    total_hours = today_blocks["duracion"].sum() / 60 if not today_blocks.empty else 0
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Bloques", f"{done_blocks}/{total_blocks}")
+    c2.metric("Horas planificadas", f"{total_hours:.1f}h")
+    c3.metric("Completado", f"{int(done_blocks/total_blocks*100)}%" if total_blocks > 0 else "0%")
+
+    st.divider()
+
+    # Add block
+    col_add, _ = st.columns([1, 5])
+    with col_add:
+        if st.button("+ Bloque", type="primary", use_container_width=True):
+            st.session_state["plan_adding"] = True
+
+    if st.session_state.get("plan_adding"):
+        with st.form("plan_block_form", clear_on_submit=True):
+            st.subheader("Nuevo bloque")
+
+            c1, c2 = st.columns(2)
+            horas = [f"{h:02d}:00" for h in range(5, 24)]
+            hora = c1.selectbox("Hora", horas, index=3)
+            dur_options = [15, 30, 45, 60, 90, 120]
+            duracion = c2.selectbox("Duracion (min)", dur_options, index=2, format_func=lambda x: f"{x} min ({x/60:.1f}h)" if x >= 60 else f"{x} min")
+
+            # Task selector
+            pending_tasks = tareas[~tareas["done"]] if not tareas.empty else pd.DataFrame()
+            task_options = ["Actividad libre"]
+            task_ids = [""]
+            if not pending_tasks.empty:
+                for _, t in pending_tasks.iterrows():
+                    pri = {"alta": "🔴", "media": "🟡", "baja": "🟢"}.get(t["prioridad"], "")
+                    proj_name = ""
+                    if t.get("proyecto") and not proyectos.empty:
+                        pm = proyectos[proyectos["id"] == t["proyecto"]]
+                        if not pm.empty:
+                            proj_name = f" ({pm.iloc[0]['nombre']})"
+                    task_options.append(f"{pri} {t['titulo']}{proj_name}")
+                    task_ids.append(t["id"])
+
+            task_sel = st.selectbox("Tarea", range(len(task_options)), format_func=lambda i: task_options[i])
+            titulo = ""
+            if task_sel == 0:
+                titulo = st.text_input("Titulo del bloque", placeholder="Que vas a hacer?")
+
+            col_s, col_c = st.columns(2)
+            submitted = col_s.form_submit_button("Agregar", type="primary")
+            cancelled = col_c.form_submit_button("Cancelar")
+
+            if submitted:
+                block_titulo = titulo.strip() if task_sel == 0 else task_options[task_sel]
+                if block_titulo or task_ids[task_sel]:
+                    new_block = {
+                        "id": _uid(), "fecha": today, "hora": hora,
+                        "tarea_id": task_ids[task_sel],
+                        "titulo": block_titulo or task_options[task_sel],
+                        "duracion": duracion, "completado": False, "ts": _now_ts(),
+                    }
+                    blocks = pd.concat([pd.DataFrame([new_block]), blocks], ignore_index=True)
+                    _save_df("plan_blocks", blocks)
+                    st.session_state["plan_adding"] = False
+                    st.rerun()
+            if cancelled:
+                st.session_state["plan_adding"] = False
+                st.rerun()
+
+    st.divider()
+
+    # Display hourly timeline
+    if today_blocks.empty:
+        st.info("No hay bloques planificados para hoy. Agrega uno con '+ Bloque'.")
+        return
+
+    current_hour = datetime.now().strftime("%H:00")
+
+    for _, b in today_blocks.iterrows():
+        hora = b["hora"]
+        is_now = hora == current_hour
+        done = b["completado"]
+
+        with st.container(border=True):
+            col_time, col_info, col_actions = st.columns([1.5, 4, 1.5])
+            with col_time:
+                if is_now:
+                    st.markdown(f"🔵 **:orange[{hora}]**")
+                else:
+                    st.markdown(f"**{hora}**")
+                st.caption(f"{b['duracion']} min")
+            with col_info:
+                style = "~~" if done else ""
+                st.markdown(f"{style}{b['titulo']}{style}")
+                if b["tarea_id"] and not tareas.empty:
+                    task_match = tareas[tareas["id"] == b["tarea_id"]]
+                    if not task_match.empty:
+                        t = task_match.iloc[0]
+                        if t.get("proyecto") and not proyectos.empty:
+                            pm = proyectos[proyectos["id"] == t["proyecto"]]
+                            if not pm.empty:
+                                st.caption(f"📂 {pm.iloc[0]['nombre']}")
+            with col_actions:
+                if not done:
+                    if st.button("✅", key=f"plan_done_{b['id']}", use_container_width=True, help="Completar"):
+                        blocks.loc[blocks["id"] == b["id"], "completado"] = True
+                        if b["tarea_id"] and not tareas.empty:
+                            tareas.loc[tareas["id"] == b["tarea_id"], "done"] = True
+                            _save_df("tareas", tareas)
+                        _save_df("plan_blocks", blocks)
+                        st.rerun()
+                else:
+                    st.markdown("✅")
+                if st.button("🗑️", key=f"plan_del_{b['id']}", use_container_width=True, help="Eliminar"):
+                    blocks = blocks[blocks["id"] != b["id"]]
+                    _save_df("plan_blocks", blocks)
+                    st.rerun()
