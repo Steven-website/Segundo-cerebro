@@ -87,6 +87,7 @@ def render():
                 if edit_id and not metas.empty:
                     metas = metas[metas["id"] != edit_id]
                 save_df("metas", pd.concat([pd.DataFrame([new_row]), metas], ignore_index=True))
+                _record_progress(new_row["id"], new_row["progreso"])
                 st.session_state["meta_editing"] = False
                 st.session_state["meta_edit_id"] = None
                 st.rerun()
@@ -122,6 +123,73 @@ def render():
             for _, m in done.iterrows():
                 _render_meta(m, metas)
 
+    # History panel
+    hist_id = st.session_state.get("meta_hist_id")
+    if hist_id:
+        _render_history(hist_id, metas)
+
+
+def _render_history(meta_id, metas):
+    """Show progress history chart for a goal."""
+    meta_match = metas[metas["id"] == meta_id]
+    if meta_match.empty:
+        return
+
+    meta = meta_match.iloc[0]
+    hist = get_df("metas_hist")
+    meta_hist = hist[hist["meta_id"] == meta_id].sort_values("fecha") if not hist.empty else pd.DataFrame()
+
+    st.divider()
+    col_t, col_close = st.columns([5, 1])
+    with col_t:
+        emoji = TIPO_EMOJIS.get(meta["tipo"], "⭐")
+        st.subheader(f"📈 Historial: {emoji} {meta['titulo']}")
+    with col_close:
+        if st.button("Cerrar", key="close_hist"):
+            st.session_state["meta_hist_id"] = None
+            st.rerun()
+
+    if meta_hist.empty:
+        st.info("No hay historial de progreso aun. El historial se registra cada vez que cambia el progreso.")
+        return
+
+    # Chart
+    chart_data = meta_hist[["fecha", "progreso"]].copy()
+    chart_data = chart_data.rename(columns={"fecha": "Fecha", "progreso": "Progreso %"})
+    chart_data = chart_data.set_index("Fecha")
+    st.line_chart(chart_data, color=["#c9943a"])
+
+    # Stats
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Progreso actual", f"{int(meta['progreso'])}%")
+    if len(meta_hist) >= 2:
+        first = meta_hist.iloc[0]["progreso"]
+        last = meta_hist.iloc[-1]["progreso"]
+        c2.metric("Avance total", f"{int(last - first)}%")
+    c3.metric("Registros", len(meta_hist))
+
+    # Detail list
+    with st.expander("Detalle de cambios"):
+        for _, h in meta_hist.iterrows():
+            st.caption(f"**{h['fecha']}** — {int(h['progreso'])}%")
+
+
+def _record_progress(meta_id, progreso):
+    """Record a progress snapshot for a goal."""
+    hist = get_df("metas_hist")
+    today = datetime.now().strftime("%Y-%m-%d")
+    # Avoid duplicate entries for same meta + same day + same value
+    if not hist.empty:
+        existing = hist[(hist["meta_id"] == meta_id) & (hist["fecha"] == today) & (hist["progreso"] == progreso)]
+        if not existing.empty:
+            return
+    new_entry = {
+        "id": uid(), "meta_id": meta_id,
+        "progreso": float(progreso), "fecha": today, "ts": now_ts(),
+    }
+    hist = pd.concat([pd.DataFrame([new_entry]), hist], ignore_index=True)
+    save_df("metas_hist", hist)
+
 
 def _auto_update_progress(metas):
     """Auto-calculate progress for goals linked to projects."""
@@ -140,6 +208,7 @@ def _auto_update_progress(metas):
         if new_prog != int(m["progreso"]):
             metas.loc[metas["id"] == m["id"], "progreso"] = float(new_prog)
             metas.loc[metas["id"] == m["id"], "completada"] = new_prog >= 100
+            _record_progress(m["id"], new_prog)
             updated = True
     if updated:
         save_df("metas", metas)
@@ -171,6 +240,9 @@ def _render_meta(m, metas):
                 st.session_state["meta_editing"] = True
                 st.session_state["meta_edit_id"] = m["id"]
                 st.rerun()
+            if st.button("📈", key=f"meta_hist_{m['id']}", help="Ver historial"):
+                st.session_state["meta_hist_id"] = m["id"]
+                st.rerun()
             # Quick progress update (only for manual goals)
             if not m.get("proyecto_id"):
                 new_prog = st.number_input("%", min_value=0, max_value=100,
@@ -179,6 +251,7 @@ def _render_meta(m, metas):
                 if new_prog != int(m["progreso"]):
                     metas.loc[metas["id"] == m["id"], "progreso"] = float(new_prog)
                     metas.loc[metas["id"] == m["id"], "completada"] = new_prog >= 100
+                    _record_progress(m["id"], new_prog)
                     save_df("metas", metas)
                     st.rerun()
             if confirm_delete(m["id"], m["titulo"], "meta"):

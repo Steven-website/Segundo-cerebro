@@ -5,10 +5,24 @@ from datetime import datetime
 from core.data import get_df, save_df
 
 
+def _auto_purge(papelera):
+    """Remove items older than 30 days automatically."""
+    import time
+    if papelera.empty:
+        return papelera
+    cutoff = time.time() - (30 * 24 * 60 * 60)
+    old = papelera[papelera["deleted_ts"] < cutoff]
+    if not old.empty:
+        papelera = papelera[papelera["deleted_ts"] >= cutoff]
+        save_df("papelera", papelera)
+    return papelera
+
+
 def render():
     st.header("Papelera")
 
     papelera = get_df("papelera")
+    papelera = _auto_purge(papelera)
 
     if papelera.empty:
         st.info("La papelera esta vacia.")
@@ -17,7 +31,7 @@ def render():
     # Sort by most recently deleted
     papelera = papelera.sort_values("deleted_ts", ascending=False)
 
-    st.caption(f"{len(papelera)} elemento(s) en la papelera")
+    st.caption(f"{len(papelera)} elemento(s) en la papelera — los items se eliminan automaticamente despues de 30 dias")
 
     col_empty, _ = st.columns([1, 5])
     with col_empty:

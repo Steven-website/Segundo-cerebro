@@ -5,10 +5,86 @@ from core.constants import AREAS, AREA_LABELS, PRIORITY_LABELS
 from core.utils import PRIORITY_EMOJIS, confirm_delete, export_csv, get_area_id
 
 
+def _auto_generate_recurring(tareas):
+    """When a recurring task is completed, generate the next occurrence."""
+    from datetime import datetime, timedelta
+    if tareas.empty:
+        return tareas
+
+    recurring_done = tareas[(tareas["done"]) & (tareas["recurrente"] != "") & (tareas["recurrente"].notna())]
+    if recurring_done.empty:
+        return tareas
+
+    new_tasks = []
+    for _, t in recurring_done.iterrows():
+        # Check if next occurrence already exists (same title, not done)
+        existing = tareas[(tareas["titulo"] == t["titulo"]) & (~tareas["done"]) & (tareas["recurrente"] == t["recurrente"])]
+        if not existing.empty:
+            continue
+
+        # Calculate next date
+        base_date = datetime.now().date()
+        if t.get("fecha"):
+            try:
+                base_date = datetime.strptime(str(t["fecha"]), "%Y-%m-%d").date()
+            except ValueError:
+                pass
+
+        freq = t["recurrente"]
+        if freq == "diario":
+            next_date = base_date + timedelta(days=1)
+        elif freq == "semanal":
+            next_date = base_date + timedelta(weeks=1)
+        elif freq == "mensual":
+            month = base_date.month + 1
+            year = base_date.year
+            if month > 12:
+                month = 1
+                year += 1
+            day = min(base_date.day, 28)
+            next_date = base_date.replace(year=year, month=month, day=day)
+        else:
+            continue
+
+        # Ensure next_date is in the future
+        today = datetime.now().date()
+        while next_date <= today:
+            if freq == "diario":
+                next_date += timedelta(days=1)
+            elif freq == "semanal":
+                next_date += timedelta(weeks=1)
+            elif freq == "mensual":
+                month = next_date.month + 1
+                year = next_date.year
+                if month > 12:
+                    month = 1
+                    year += 1
+                day = min(next_date.day, 28)
+                next_date = next_date.replace(year=year, month=month, day=day)
+
+        new_tasks.append({
+            "id": uid(), "titulo": t["titulo"], "area": t["area"],
+            "prioridad": t["prioridad"],
+            "fecha_inicio": str(next_date),
+            "fecha": str(next_date),
+            "proyecto": t.get("proyecto", ""), "notas": t.get("notas", ""),
+            "subtareas": "", "recurrente": t["recurrente"],
+            "depende_de": "", "etiqueta": t.get("etiqueta", ""),
+            "done": False, "pinned": False, "archived": False, "ts": now_ts(),
+        })
+
+    if new_tasks:
+        tareas = pd.concat([pd.DataFrame(new_tasks), tareas], ignore_index=True)
+        save_df("tareas", tareas)
+
+    return tareas
+
+
 def render():
     st.header("Tareas")
 
     tareas = get_df("tareas")
+    tareas = _auto_generate_recurring(tareas)
     proyectos = get_df("proyectos")
 
     # --- View toggle ---
