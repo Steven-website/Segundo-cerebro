@@ -83,37 +83,6 @@ def render():
 
     st.divider()
 
-    # --- Quick access link ---
-    st.markdown("### Link de acceso rapido")
-    st.caption("Guarda este link en favoritos para entrar sin contrasena.")
-    token = user_data.get("token", "")
-    if not token:
-        from core.auth import _generate_token
-        token = _generate_token()
-        users[username]["token"] = token
-        _save_users(users)
-        st.session_state["user_data"] = users[username]
-
-    try:
-        base_url = st.secrets.get("app_url", "").rstrip("/")
-    except Exception:
-        base_url = ""
-    if not base_url:
-        base_url = "https://segundo-cerebro-mwwcchrpfs9uxxvcozqecu.streamlit.app"
-    link = f"{base_url}/?token={token}"
-    st.code(link, language=None)
-
-    if st.button("Regenerar token", key="regen_token"):
-        from core.auth import _generate_token
-        new_token = _generate_token()
-        users[username]["token"] = new_token
-        _save_users(users)
-        st.session_state["user_data"] = users[username]
-        st.success("Token regenerado. El link anterior ya no funciona.")
-        st.rerun()
-
-    st.divider()
-
     # --- Edit name ---
     st.markdown("### Nombre")
     with st.form("profile_name_form"):
