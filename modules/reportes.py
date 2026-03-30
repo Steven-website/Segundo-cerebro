@@ -9,7 +9,10 @@ from core.utils import parse_checks, PRIORITY_EMOJIS
 def render():
     st.header("Reportes y Balance")
 
-    tab_mensual, tab_anual, tab_balance = st.tabs(["Reporte mensual", "Reporte anual", "Balance general"])
+    tab_semanal, tab_mensual, tab_anual, tab_balance = st.tabs(["Resumen semanal", "Reporte mensual", "Reporte anual", "Balance general"])
+
+    with tab_semanal:
+        _render_weekly_summary()
 
     with tab_mensual:
         _render_monthly()
@@ -360,3 +363,144 @@ def _generate_text_report():
             lines.append(f"  [{t['prioridad']}] {t['titulo']}")
 
     return "\n".join(lines)
+
+
+def _render_weekly_summary():
+    """Weekly summary: what you accomplished vs previous week."""
+    today = datetime.now()
+    # This week (Mon-Sun)
+    monday = today - timedelta(days=today.weekday())
+    sunday = monday + timedelta(days=6)
+    # Previous week
+    prev_monday = monday - timedelta(days=7)
+    prev_sunday = prev_monday + timedelta(days=6)
+
+    st.subheader(f"Semana: {monday.strftime('%d/%m')} — {sunday.strftime('%d/%m/%Y')}")
+
+    tareas = get_df("tareas")
+    habitos = get_df("habitos")
+    txs = get_df("txs")
+    pomo = get_df("pomo_sessions")
+    savings = get_df("savings")
+
+    def _in_range(fecha_str, start, end):
+        return start.strftime("%Y-%m-%d") <= fecha_str <= end.strftime("%Y-%m-%d")
+
+    # --- Tasks ---
+    this_tasks = 0
+    prev_tasks = 0
+    if not tareas.empty:
+        for _, t in tareas.iterrows():
+            if t["done"] and t.get("ts"):
+                task_date = datetime.fromtimestamp(t["ts"]).strftime("%Y-%m-%d")
+                if _in_range(task_date, monday, sunday):
+                    this_tasks += 1
+                elif _in_range(task_date, prev_monday, prev_sunday):
+                    prev_tasks += 1
+
+    # --- Habits ---
+    this_habits = 0
+    prev_habits = 0
+    if not habitos.empty:
+        for _, h in habitos.iterrows():
+            checks = parse_checks(h.get("checks", "{}"))
+            for ds, done in checks.items():
+                if done:
+                    if _in_range(ds, monday, sunday):
+                        this_habits += 1
+                    elif _in_range(ds, prev_monday, prev_sunday):
+                        prev_habits += 1
+
+    # --- Pomodoro ---
+    this_pomo = 0
+    prev_pomo = 0
+    if not pomo.empty:
+        for _, p in pomo.iterrows():
+            if _in_range(p["fecha"], monday, sunday):
+                this_pomo += int(p["minutos"])
+            elif _in_range(p["fecha"], prev_monday, prev_sunday):
+                prev_pomo += int(p["minutos"])
+
+    # --- Savings ---
+    savings_hist = get_df("savings_hist")
+    this_saved = 0
+    prev_saved = 0
+    if not savings_hist.empty:
+        for _, s in savings_hist.iterrows():
+            if _in_range(s["fecha"], monday, sunday):
+                this_saved += float(s["monto"])
+            elif _in_range(s["fecha"], prev_monday, prev_sunday):
+                prev_saved += float(s["monto"])
+
+    # --- Display metrics with deltas ---
+    def _delta(current, previous):
+        if previous == 0:
+            return f"+{current}" if current > 0 else None
+        change = int((current - previous) / previous * 100)
+        return f"{change:+d}% vs semana anterior"
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Tareas completadas", this_tasks, delta=_delta(this_tasks, prev_tasks))
+    c2.metric("Habitos cumplidos", this_habits, delta=_delta(this_habits, prev_habits))
+    c3.metric("Minutos Pomodoro", this_pomo, delta=_delta(this_pomo, prev_pomo))
+    c4.metric("Ahorrado", fmt(this_saved), delta=_delta(this_saved, prev_saved) if this_saved or prev_saved else None)
+
+    st.divider()
+
+    # --- Daily breakdown chart ---
+    st.subheader("Desglose diario")
+    day_names = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"]
+    daily_data = []
+    for i in range(7):
+        day = monday + timedelta(days=i)
+        ds = day.strftime("%Y-%m-%d")
+
+        tasks_day = 0
+        if not tareas.empty:
+            for _, t in tareas.iterrows():
+                if t["done"] and t.get("ts"):
+                    if datetime.fromtimestamp(t["ts"]).strftime("%Y-%m-%d") == ds:
+                        tasks_day += 1
+
+        habits_day = 0
+        if not habitos.empty:
+            for _, h in habitos.iterrows():
+                checks = parse_checks(h.get("checks", "{}"))
+                if checks.get(ds, False):
+                    habits_day += 1
+
+        pomo_day = 0
+        if not pomo.empty:
+            day_pomo = pomo[pomo["fecha"] == ds]
+            pomo_day = int(day_pomo["minutos"].sum()) if not day_pomo.empty else 0
+
+        daily_data.append({"Dia": day_names[i], "Tareas": tasks_day, "Habitos": habits_day, "Pomodoro (min)": pomo_day})
+
+    chart_df = pd.DataFrame(daily_data)
+    if chart_df[["Tareas", "Habitos"]].sum().sum() > 0:
+        st.bar_chart(chart_df.set_index("Dia")[["Tareas", "Habitos"]], color=["#5a8fc9", "#d4a853"])
+
+    # --- Finances this week ---
+    st.divider()
+    st.subheader("Finanzas de la semana")
+    this_inc = 0
+    this_exp = 0
+    prev_inc = 0
+    prev_exp = 0
+    if not txs.empty:
+        for _, tx in txs.iterrows():
+            if _in_range(tx["fecha"], monday, sunday):
+                if tx["type"] == "ingreso":
+                    this_inc += float(tx["amt"])
+                else:
+                    this_exp += float(tx["amt"])
+            elif _in_range(tx["fecha"], prev_monday, prev_sunday):
+                if tx["type"] == "ingreso":
+                    prev_inc += float(tx["amt"])
+                else:
+                    prev_exp += float(tx["amt"])
+
+    fc1, fc2, fc3 = st.columns(3)
+    fc1.metric("Ingresos", fmt(this_inc), delta=_delta(this_inc, prev_inc))
+    fc2.metric("Gastos", fmt(this_exp), delta=_delta(this_exp, prev_exp), delta_color="inverse")
+    fc3.metric("Balance", fmt(this_inc - this_exp))
