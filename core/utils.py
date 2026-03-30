@@ -19,10 +19,15 @@ def parse_checks(data):
 def is_done_today(habit):
     today_str = datetime.now().strftime("%Y-%m-%d")
     checks = parse_checks(habit.get("checks", "{}"))
+    reps = [r.strip() for r in habit.get("repeticiones", "").split(",") if r.strip()]
     val = checks.get(today_str, False)
     if isinstance(val, dict):
-        # Sub-checks: done if all are True
+        if reps:
+            return all(val.get(r, False) for r in reps)
         return all(val.values()) if val else False
+    if reps and not isinstance(val, dict):
+        # Has sub-checks but stored as bool — not truly complete
+        return False
     return val
 
 
