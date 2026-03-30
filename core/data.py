@@ -8,8 +8,8 @@ import streamlit as st
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 
 SCHEMAS = {
-    "notas": {"id": str, "titulo": str, "area": str, "tags": str, "body": str, "ts": float},
-    "tareas": {"id": str, "titulo": str, "area": str, "prioridad": str, "fecha": str, "proyecto": str, "notas": str, "done": bool, "ts": float},
+    "notas": {"id": str, "titulo": str, "area": str, "tags": str, "body": str, "pinned": bool, "archived": bool, "ts": float},
+    "tareas": {"id": str, "titulo": str, "area": str, "prioridad": str, "fecha": str, "proyecto": str, "notas": str, "subtareas": str, "recurrente": str, "done": bool, "pinned": bool, "archived": bool, "ts": float},
     "proyectos": {"id": str, "nombre": str, "area": str, "emoji": str, "desc": str, "ts": float},
     "txs": {"id": str, "type": str, "desc": str, "amt": float, "cat": str, "fecha": str, "ts": float},
     "savings": {"id": str, "name": str, "goal": float, "current": float, "date": str, "ts": float},
@@ -37,6 +37,18 @@ def load_df(name):
     if os.path.exists(path):
         try:
             df = pd.read_parquet(path)
+            # Add missing columns for schema evolution
+            schema = SCHEMAS.get(name, {})
+            for col, dtype in schema.items():
+                if col not in df.columns:
+                    if dtype == bool:
+                        df[col] = False
+                    elif dtype == str:
+                        df[col] = ""
+                    elif dtype == float:
+                        df[col] = 0.0
+                    elif dtype == int:
+                        df[col] = 0
             st.session_state[key] = df
             return df
         except Exception:

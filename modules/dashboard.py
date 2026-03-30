@@ -3,19 +3,17 @@ import pandas as pd
 from datetime import datetime, timedelta
 from core.data import get_df
 from core.constants import AREA_LABELS, fmt, HABIT_FREQ
+from core.utils import is_done_today, parse_checks, PRIORITY_EMOJIS
 
 
 def _get_today_habits(habitos_df):
     if habitos_df.empty:
         return habitos_df
-    today = datetime.now()
-    dow = today.weekday()
+    dow = datetime.now().weekday()
     mask = []
     for _, h in habitos_df.iterrows():
         freq = h.get("freq", "diario")
-        if freq == "diario":
-            mask.append(True)
-        elif freq == "laborables":
+        if freq == "laborables":
             mask.append(dow < 5)
         elif freq == "fines":
             mask.append(dow >= 5)
@@ -24,26 +22,17 @@ def _get_today_habits(habitos_df):
     return habitos_df[mask]
 
 
-def _is_done_today(h):
-    import json
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    checks = h.get("checks", "{}")
-    if isinstance(checks, str):
-        try:
-            checks = json.loads(checks)
-        except Exception:
-            checks = {}
-    return checks.get(today_str, False)
-
-
-def _get_month_finance(txs_df):
+def _get_month_finance(txs_df, year=None, month=None):
     if txs_df.empty:
         return 0.0, 0.0
     now = datetime.now()
-    month_txs = txs_df[txs_df["fecha"].str.startswith(f"{now.year}-{now.month:02d}")]
-    ingresos = month_txs[month_txs["type"] == "ingreso"]["amt"].sum()
-    gastos = month_txs[month_txs["type"] == "gasto"]["amt"].sum()
-    return float(ingresos), float(gastos)
+    y = year or now.year
+    m = month or now.month
+    prefix = f"{y}-{m:02d}"
+    month_txs = txs_df[txs_df["fecha"].str.startswith(prefix)]
+    ingresos = float(month_txs[month_txs["type"] == "ingreso"]["amt"].sum()) if not month_txs.empty else 0
+    gastos = float(month_txs[month_txs["type"] == "gasto"]["amt"].sum()) if not month_txs.empty else 0
+    return ingresos, gastos
 
 
 def render():
@@ -59,7 +48,7 @@ def render():
     pending = tareas[~tareas["done"]].shape[0] if not tareas.empty else 0
     completed = tareas[tareas["done"]].shape[0] if not tareas.empty else 0
     today_habs = _get_today_habits(habitos)
-    habs_done = sum(1 for _, h in today_habs.iterrows() if _is_done_today(h)) if not today_habs.empty else 0
+    habs_done = sum(1 for _, h in today_habs.iterrows() if is_done_today(h)) if not today_habs.empty else 0
     inc, exp = _get_month_finance(txs)
     balance = inc - exp
 
@@ -68,6 +57,78 @@ def render():
     c2.metric("Tareas pendientes", pending, help=f"{completed} completadas")
     c3.metric("Habitos hoy", f"{habs_done}/{len(today_habs)}")
     c4.metric("Balance del mes", fmt(balance), delta=f"{fmt(inc)} ingresos" if inc > 0 else None)
+
+    st.divider()
+
+    # --- Charts ---
+    col_chart1, col_chart2 = st.columns(2)
+
+    with col_chart1:
+        st.subheader("Finanzas (6 meses)")
+        now = datetime.now()
+        months_data = []
+        for i in range(5, -1, -1):
+            m = now.month - i
+            y = now.year
+            if m <= 0:
+                m += 12
+                y -= 1
+            m_inc, m_exp = _get_month_finance(txs, y, m)
+            months_data.append({"Mes": f"{y}-{m:02d}", "Ingresos": m_inc, "Gastos": m_exp})
+
+        chart_df = pd.DataFrame(months_data)
+        if chart_df[["Ingresos", "Gastos"]].sum().sum() > 0:
+            st.bar_chart(chart_df.set_index("Mes"), color=["#4a9e7a", "#c96a6a"])
+        else:
+            st.info("Agrega ingresos o gastos para ver el grafico.")
+
+    with col_chart2:
+        st.subheader("Habitos (7 dias)")
+        if not habitos.empty:
+            days_data = []
+            for d in range(6, -1, -1):
+                day = datetime.now() - timedelta(days=d)
+                ds = day.strftime("%Y-%m-%d")
+                day_label = day.strftime("%a")
+                done_count = 0
+                for _, h in habitos.iterrows():
+                    checks = parse_checks(h.get("checks", "{}"))
+                    if checks.get(ds, False):
+                        done_count += 1
+                days_data.append({"Dia": day_label, "Completados": done_count})
+            habit_chart = pd.DataFrame(days_data)
+            st.bar_chart(habit_chart.set_index("Dia"), color=["#d4a853"])
+        else:
+            st.info("Agrega habitos para ver el grafico.")
+
+    # --- More analytics ---
+    savings = get_df("savings")
+    debts = get_df("debts")
+    inventario = get_df("inventario")
+
+    col_chart3, col_chart4 = st.columns(2)
+
+    with col_chart3:
+        st.subheader("Metas de ahorro")
+        if not savings.empty:
+            sav_data = []
+            for _, s in savings.iterrows():
+                pct = min(s["current"] / s["goal"] * 100, 100) if s["goal"] > 0 else 0
+                sav_data.append({"Meta": s["name"][:20], "Progreso %": pct})
+            sav_chart = pd.DataFrame(sav_data)
+            st.bar_chart(sav_chart.set_index("Meta"), color=["#4a9e7a"])
+        else:
+            st.info("Agrega metas de ahorro.")
+
+    with col_chart4:
+        st.subheader("Inventario por categoria")
+        if not inventario.empty:
+            inv_grouped = inventario.groupby("cat").apply(lambda g: (g["val"] * g["qty"]).sum()).reset_index()
+            inv_grouped.columns = ["Categoria", "Valor"]
+            inv_grouped["Categoria"] = inv_grouped["Categoria"].str.capitalize()
+            st.bar_chart(inv_grouped.set_index("Categoria"), color=["#8a6ac9"])
+        else:
+            st.info("Agrega items al inventario.")
 
     st.divider()
 
@@ -89,10 +150,10 @@ def render():
 
         activities.sort(key=lambda x: x["ts"], reverse=True)
         if activities:
-            for a in activities[:6]:
+            for a in activities[:8]:
                 st.markdown(f"{a['icon']} **{a['name']}** `{a['type']}`")
         else:
-            st.info("Sin actividad aun.")
+            st.info("Sin actividad aun. Empieza creando notas, tareas o registrando gastos.")
 
     with col_right:
         st.subheader("Tareas prioritarias")
@@ -103,11 +164,7 @@ def render():
                 pending_tasks["_pri_ord"] = pending_tasks["prioridad"].map(pri_order).fillna(2)
                 pending_tasks = pending_tasks.sort_values("_pri_ord").head(5)
                 for _, t in pending_tasks.iterrows():
-                    pri_emoji = {
-                        "alta": "\U0001f534",
-                        "media": "\U0001f7e1",
-                        "baja": "\U0001f7e2",
-                    }.get(t["prioridad"], "\u26aa")
+                    pri_emoji = PRIORITY_EMOJIS.get(t["prioridad"], "\u26aa")
                     area_label = AREA_LABELS.get(t["area"], t["area"])
                     fecha = f" \U0001f4c5 {t['fecha']}" if t.get("fecha") else ""
                     st.markdown(f"{pri_emoji} **{t['titulo']}** \u2022 {area_label}{fecha}")
@@ -124,8 +181,8 @@ def render():
     with col_h:
         st.subheader("Habitos de hoy")
         if not today_habs.empty:
-            for _, h in today_habs.head(4).iterrows():
-                done = _is_done_today(h)
+            for _, h in today_habs.head(6).iterrows():
+                done = is_done_today(h)
                 emoji = h.get("emoji", "\u2b50")
                 status = "\u2705" if done else "\u2b1c"
                 st.markdown(f"{status} {emoji} {h['name']}")
@@ -138,3 +195,16 @@ def render():
         st.markdown(f"**Gastos:** :red[{fmt(exp)}]")
         color = "green" if balance >= 0 else "red"
         st.markdown(f"**Balance:** :{color}[{fmt(balance)}]")
+
+        # Project progress summary
+        if not proyectos.empty:
+            st.divider()
+            st.subheader("Proyectos activos")
+            for _, p in proyectos.head(4).iterrows():
+                proj_tasks = tareas[tareas["proyecto"] == p["id"]] if not tareas.empty else pd.DataFrame()
+                total = len(proj_tasks)
+                done = proj_tasks["done"].sum() if total > 0 else 0
+                pct = int(done / total * 100) if total > 0 else 0
+                proj_emoji = p.get('emoji', '\U0001f4c1')
+                st.markdown(f"{proj_emoji} **{p['nombre']}** - {pct}%")
+                st.progress(pct / 100)
