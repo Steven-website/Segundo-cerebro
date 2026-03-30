@@ -24,33 +24,36 @@ def _auto_generate_recurring(txs):
     for _, r in active.iterrows():
         freq = r.get("frecuencia", "mensual")
         dia = int(r["dia"])
+        fecha_inicio_str = r.get("fecha_inicio", "")
+        try:
+            fecha_inicio = date.fromisoformat(fecha_inicio_str) if fecha_inicio_str else None
+        except (ValueError, TypeError):
+            fecha_inicio = None
 
         # Determine which dates to check based on frequency
         dates_to_check = []
         if freq == "mensual":
-            # Check current month
             try:
                 target = date(today.year, today.month, min(dia, 28))
             except ValueError:
                 target = date(today.year, today.month, 28)
-            if target <= today:
+            if target <= today and (not fecha_inicio or target >= fecha_inicio):
                 dates_to_check.append(target)
         elif freq == "quincenal":
-            # Check 1st and 15th-based or dia and dia+15
             for d in [dia, min(dia + 15, 28)]:
                 try:
                     target = date(today.year, today.month, min(d, 28))
                 except ValueError:
                     target = date(today.year, today.month, 28)
-                if target <= today:
+                if target <= today and (not fecha_inicio or target >= fecha_inicio):
                     dates_to_check.append(target)
         elif freq == "semanal":
-            # Check all matching weekdays this month up to today
             from datetime import timedelta
             d = date(today.year, today.month, 1)
             while d <= today:
                 if d.isoweekday() == min(dia, 7):
-                    dates_to_check.append(d)
+                    if not fecha_inicio or d >= fecha_inicio:
+                        dates_to_check.append(d)
                 d += timedelta(days=1)
 
         for target_date in dates_to_check:
@@ -360,8 +363,16 @@ def _render_recurrentes():
             freq = c4.selectbox("Frecuencia", freq_keys,
                                 index=freq_keys.index(existing["frecuencia"]) if existing is not None and existing.get("frecuencia") in freq_keys else 0,
                                 format_func=lambda x: FREQ_OPTIONS[x])
-            dia = c5.number_input("Dia del mes/semana", min_value=1, max_value=31, step=1,
+            dia = c5.number_input("Dia del cobro", min_value=1, max_value=31, step=1,
                                   value=int(existing["dia"]) if existing is not None else 1)
+
+            existing_fecha = None
+            if existing is not None and existing.get("fecha_inicio"):
+                try:
+                    existing_fecha = date.fromisoformat(existing["fecha_inicio"])
+                except (ValueError, TypeError):
+                    pass
+            fecha_inicio = st.date_input("Fecha de inicio", value=existing_fecha or date.today())
 
             col_s, col_c = st.columns(2)
             submitted = col_s.form_submit_button("Guardar", type="primary")
@@ -371,7 +382,7 @@ def _render_recurrentes():
                 new_row = {
                     "id": edit_id or uid(), "type": tx_type, "desc": desc.strip(),
                     "amt": amt, "cat": cat, "frecuencia": freq, "dia": dia,
-                    "activa": True, "ts": now_ts(),
+                    "fecha_inicio": str(fecha_inicio), "activa": True, "ts": now_ts(),
                 }
                 if edit_id and not recurrentes.empty:
                     recurrentes = recurrentes[recurrentes["id"] != edit_id]
@@ -415,7 +426,8 @@ def _render_recurrentes():
 
         col_info, col_actions = st.columns([5, 1])
         with col_info:
-            st.markdown(f"{icon} **{r['desc']}** \u2022 :{color}[{sign}{fmt(r['amt'])}] \u2022 {freq_label} \u2022 Dia {int(r['dia'])}")
+            desde = f" \u2022 Desde {r['fecha_inicio']}" if r.get("fecha_inicio") else ""
+            st.markdown(f"{icon} **{r['desc']}** \u2022 :{color}[{sign}{fmt(r['amt'])}] \u2022 {freq_label} \u2022 Dia {int(r['dia'])}{desde}")
         with col_actions:
             ca, cb = st.columns(2)
             with ca:
