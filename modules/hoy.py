@@ -168,9 +168,12 @@ def _render_pendientes():
     st.divider()
 
     # ═══ HABITS SECTION ═══
-    if today_habs:
+    pending_habs = [h for h in today_habs if not is_done_today(h)]
+    done_habs = [h for h in today_habs if is_done_today(h)]
+
+    if pending_habs:
         st.subheader(f"◉ Habitos ({habs_done}/{total_habs})")
-        _render_today_habits_compact(today_habs, habitos)
+        _render_today_habits_compact(pending_habs, habitos)
         st.divider()
 
     # ═══ OVERDUE SECTION ═══
@@ -206,6 +209,12 @@ def _render_pendientes():
             st.divider()
             with st.expander(f"📌 Sin fecha asignada ({len(tasks_no_date)})"):
                 _render_tasks_by_project(tasks_no_date, tareas, proyectos, overdue=False)
+
+    # ═══ COMPLETED HABITS (at the bottom) ═══
+    if done_habs:
+        st.divider()
+        with st.expander(f"✅ Habitos completados ({len(done_habs)}/{total_habs})"):
+            _render_today_habits_compact(done_habs, habitos)
 
 
 def _render_tasks_by_project(task_df, tareas, proyectos, overdue=False):
