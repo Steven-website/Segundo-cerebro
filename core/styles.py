@@ -176,21 +176,153 @@ footer {visibility: hidden;}
 .tag-reunion { background: rgba(90,143,201,0.2); color: #5a8fc9; padding: 2px 8px; border-radius: 10px; font-size: 10px; }
 .tag-personal { background: rgba(74,158,122,0.2); color: #4a9e7a; padding: 2px 8px; border-radius: 10px; font-size: 10px; }
 
-/* Mobile: stack columns, bigger touch targets */
-@media (max-width: 768px) {
+/* ===== RESPONSIVE / MOBILE ===== */
+
+/* Tablet: allow 2-col layouts */
+@media (max-width: 992px) and (min-width: 769px) {
     [data-testid="stHorizontalBlock"] {
         flex-wrap: wrap !important;
     }
     [data-testid="stHorizontalBlock"] > div {
-        min-width: 100% !important;
+        min-width: 45% !important;
+        flex: 1 1 45% !important;
     }
+}
+
+/* Mobile: stack columns, bigger touch targets */
+@media (max-width: 768px) {
+    /* Stack all columns vertically */
+    [data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap !important;
+        gap: 4px !important;
+    }
+    [data-testid="stHorizontalBlock"] > div {
+        min-width: 100% !important;
+        flex: 1 1 100% !important;
+    }
+
+    /* Metric blocks: keep 2 per row */
+    [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) {
+        flex-wrap: wrap !important;
+        gap: 8px !important;
+    }
+    [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) > div {
+        min-width: 45% !important;
+        flex: 1 1 45% !important;
+    }
+
+    /* Touch-friendly buttons */
     button {
         min-height: 44px !important;
+        font-size: 14px !important;
     }
+
+    /* Checkboxes - bigger touch area */
     .stCheckbox label {
         min-height: 44px;
         display: flex;
         align-items: center;
+    }
+
+    /* Selectbox / nav */
+    [data-testid="stSelectbox"] {
+        font-size: 14px !important;
+    }
+
+    /* Tabs - scrollable on mobile */
+    [data-testid="stTabs"] [role="tablist"] {
+        overflow-x: auto !important;
+        flex-wrap: nowrap !important;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+    [data-testid="stTabs"] [role="tablist"]::-webkit-scrollbar {
+        display: none;
+    }
+    [data-testid="stTabs"] button[role="tab"] {
+        white-space: nowrap !important;
+        flex-shrink: 0 !important;
+        font-size: 13px !important;
+        padding: 8px 12px !important;
+    }
+
+    /* Expanders - bigger touch */
+    [data-testid="stExpander"] summary {
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+    }
+
+    /* Forms - more padding */
+    [data-testid="stForm"] {
+        padding: 12px !important;
+    }
+
+    /* Charts - full width */
+    [data-testid="stVegaLiteChart"],
+    [data-testid="stArrowVegaLiteChart"] {
+        width: 100% !important;
+    }
+
+    /* Reduce padding on main content for more space */
+    .main .block-container {
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+        padding-top: 1rem !important;
+    }
+
+    /* Compact header on mobile */
+    h1 { font-size: 1.4rem !important; }
+    h2 { font-size: 1.2rem !important; }
+    h3 { font-size: 1rem !important; }
+
+    /* Habit day cells - slightly smaller on mobile */
+    .habit-day {
+        width: 20px;
+        height: 20px;
+        font-size: 8px;
+    }
+
+    /* Text inputs bigger touch area */
+    input[type="text"], input[type="password"], input[type="email"], input[type="number"] {
+        min-height: 44px !important;
+        font-size: 16px !important; /* prevents iOS zoom */
+    }
+
+    /* Textareas */
+    textarea {
+        font-size: 16px !important; /* prevents iOS zoom */
+    }
+
+    /* Code blocks - wrap on mobile */
+    code {
+        word-break: break-all !important;
+        white-space: pre-wrap !important;
+    }
+
+    /* Reduce divider spacing on mobile */
+    hr {
+        margin: 6px 0 !important;
+    }
+
+    /* Radio nav buttons - compact on mobile */
+    [data-testid="stRadio"] > div {
+        gap: 4px !important;
+    }
+    [data-testid="stRadio"] label {
+        font-size: 13px !important;
+        padding: 6px 8px !important;
+    }
+
+    /* Metric cards compact */
+    [data-testid="stMetric"] {
+        padding: 6px !important;
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 20px !important;
+    }
+    [data-testid="stMetricLabel"] {
+        font-size: 11px !important;
     }
 }
 </style>

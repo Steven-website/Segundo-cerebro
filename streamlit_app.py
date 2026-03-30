@@ -118,9 +118,9 @@ if user:
     except Exception:
         pass
 
-col_title, col_user, col_logout = st.columns([4, 2, 1])
+col_title, col_user, col_logout = st.columns([5, 2, 1])
 with col_title:
-    st.markdown("### 🧠 Segundo Cerebro")
+    st.markdown(f"### 🧠 Segundo Cerebro")
 with col_user:
     st.caption(f"{avatar} {user}")
 with col_logout:
@@ -130,15 +130,19 @@ with col_logout:
                 del st.session_state[key]
         st.session_state["logged_in"] = False
         st.session_state["current_user"] = ""
+        st.query_params.clear()
         st.rerun()
 
-# Navigation selector
-page = st.selectbox(
-    "Navegacion",
-    PAGES,
-    key="nav_page",
-    label_visibility="collapsed",
+# Quick navigation for most-used pages
+QUICK_PAGES = ["📌 Hoy", "◉ Habitos", "◈ Proyectos", "◈ Dashboard", "₡ Finanzas"]
+quick_nav = st.radio(
+    "Nav", QUICK_PAGES + ["Mas..."],
+    horizontal=True, label_visibility="collapsed", key="quick_nav",
 )
+if quick_nav == "Mas...":
+    page = st.selectbox("Navegacion", PAGES, key="nav_page", label_visibility="collapsed")
+else:
+    page = quick_nav
 
 # Alerts
 show_alerts()
