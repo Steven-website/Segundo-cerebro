@@ -3,9 +3,9 @@ from core.styles import inject_css
 
 st.set_page_config(
     page_title="Segundo Cerebro",
-    page_icon="\U0001f9e0",
+    page_icon="🧠",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 inject_css()
@@ -23,15 +23,21 @@ if not st.session_state["logged_in"]:
 # --- Alerts helper ---
 def show_alerts():
     from core.data import get_df
-    from core.constants import BUDGET_DEFAULT
+    from core.constants import BUDGET_DEFAULT, fmt
     from datetime import datetime
+
+    alerts = []
 
     tareas = get_df("tareas")
     if not tareas.empty:
         today = datetime.now().strftime("%Y-%m-%d")
         overdue = tareas[(~tareas["done"]) & (tareas["fecha"] != "") & (tareas["fecha"] < today)]
         if not overdue.empty:
-            st.warning(f"\u26a0\ufe0f {len(overdue)} tarea(s) vencida(s)")
+            alerts.append(("warning", f"⚠️ {len(overdue)} tarea(s) vencida(s)"))
+
+        due_today = tareas[(~tareas["done"]) & (tareas["fecha"] == today)]
+        if not due_today.empty:
+            alerts.append(("info", f"📋 {len(due_today)} tarea(s) para hoy"))
 
     txs = get_df("txs")
     budget_df = get_df("budget")
@@ -45,79 +51,130 @@ def show_alerts():
                 continue
             spent = float(month_txs[month_txs["cat"] == cat]["amt"].sum()) if not month_txs.empty else 0
             if limit > 0 and spent > limit:
-                st.error(f"\U0001f4b8 {cat.capitalize()}: excede presupuesto")
-                break
+                alerts.append(("error", f"💸 {cat.capitalize()}: excede presupuesto ({fmt(spent)}/{fmt(limit)})"))
+
+    debts = get_df("debts")
+    if not debts.empty:
+        today = datetime.now().strftime("%Y-%m-%d")
+        for _, d in debts.iterrows():
+            if d.get("due") and d["due"] <= today and d["paid"] < d["total"]:
+                alerts.append(("error", f"🔴 Deuda vencida: {d['name']}"))
+
+    metas = get_df("metas")
+    if not metas.empty:
+        active = metas[~metas["completada"].fillna(False)]
+        high_progress = active[active["progreso"] >= 80]
+        if not high_progress.empty:
+            alerts.append(("success", f"🎯 {len(high_progress)} meta(s) casi completada(s)!"))
+
+    for alert_type, msg in alerts:
+        if alert_type == "warning":
+            st.warning(msg)
+        elif alert_type == "error":
+            st.error(msg)
+        elif alert_type == "success":
+            st.success(msg)
+        elif alert_type == "info":
+            st.info(msg)
 
 
 # --- Navigation pages ---
 PAGES = [
-    "\u25c8 Dashboard",
-    "\U0001f50d Buscar",
-    "\u25fb Notas",
-    "\u25f7 Tareas",
-    "\u25c8 Proyectos",
-    "\u20a1 Finanzas",
-    "\u25ce Ahorros & Deudas",
-    "\u25c9 Habitos",
-    "\U0001f4c5 Calendario",
-    "\u25a3 Inventario",
-    "\U0001f345 Pomodoro",
-    "\U0001f916 Buscar con IA",
-    "\U0001f4be Backup & Importar",
+    "◈ Dashboard",
+    "📌 Hoy",
+    "🔍 Buscar",
+    "◈ Proyectos",
+    "◷ Tareas",
+    "🎯 Metas",
+    "₡ Finanzas",
+    "◎ Ahorros & Deudas",
+    "◉ Habitos",
+    "📅 Calendario",
+    "◣ Inventario",
+    "🎤 Audios",
+    "🍅 Pomodoro",
+    "📊 Reportes",
+    "🤖 Buscar con IA",
+    "💾 Backup & Importar",
+    "👤 Perfil",
 ]
 
-# --- Sidebar ---
-with st.sidebar:
-    st.markdown("### \U0001f9e0 Segundo Cerebro")
-    st.caption("v5 \u2022 PKM Personal")
+# --- Top navigation bar (works on mobile) ---
+import json, os
 
-    user = st.session_state.get("current_user", "")
-    if user:
-        st.markdown(f"\U0001f464 **{user}**")
-        if st.button("Cerrar sesion", use_container_width=True):
-            for key in list(st.session_state.keys()):
-                if key.startswith("df_"):
-                    del st.session_state[key]
-            st.session_state["logged_in"] = False
-            st.session_state["current_user"] = ""
-            st.rerun()
+user = st.session_state.get("current_user", "")
+avatar = "👤"
+if user:
+    users_file = os.path.join(os.path.dirname(__file__), "data", "users.json")
+    try:
+        if os.path.exists(users_file):
+            with open(users_file) as f:
+                users_data = json.load(f)
+            avatar = users_data.get(user, {}).get("avatar", "👤")
+    except Exception:
+        pass
 
-    st.divider()
-    show_alerts()
+col_title, col_user, col_logout = st.columns([4, 2, 1])
+with col_title:
+    st.markdown("### 🧠 Segundo Cerebro")
+with col_user:
+    st.caption(f"{avatar} {user}")
+with col_logout:
+    if st.button("Salir", use_container_width=True):
+        for key in list(st.session_state.keys()):
+            if key.startswith("df_"):
+                del st.session_state[key]
+        st.session_state["logged_in"] = False
+        st.session_state["current_user"] = ""
+        st.rerun()
 
-    page = st.radio(
-        "Navegacion",
-        PAGES,
-        key="nav_page",
-        label_visibility="collapsed",
-    )
+# Navigation selector
+page = st.selectbox(
+    "Navegacion",
+    PAGES,
+    key="nav_page",
+    label_visibility="collapsed",
+)
+
+# Alerts
+show_alerts()
+
+st.divider()
 
 # --- Routing ---
-if page == "\u25c8 Dashboard":
+if page == "◈ Dashboard":
     from modules.dashboard import render
-elif page == "\U0001f50d Buscar":
+elif page == "📌 Hoy":
+    from modules.hoy import render
+elif page == "🔍 Buscar":
     from modules.buscar import render
-elif page == "\u25fb Notas":
-    from modules.notas import render
-elif page == "\u25f7 Tareas":
+elif page == "◷ Tareas":
     from modules.tareas import render
-elif page == "\u25c8 Proyectos":
+elif page == "◈ Proyectos":
     from modules.proyectos import render
-elif page == "\u20a1 Finanzas":
+elif page == "🎯 Metas":
+    from modules.metas import render
+elif page == "₡ Finanzas":
     from modules.finanzas import render
-elif page == "\u25ce Ahorros & Deudas":
+elif page == "◎ Ahorros & Deudas":
     from modules.ahorros import render
-elif page == "\u25c9 Habitos":
+elif page == "◉ Habitos":
     from modules.habitos import render
-elif page == "\U0001f4c5 Calendario":
+elif page == "📅 Calendario":
     from modules.calendario import render
-elif page == "\u25a3 Inventario":
+elif page == "◣ Inventario":
     from modules.inventario import render
-elif page == "\U0001f345 Pomodoro":
+elif page == "🎤 Audios":
+    from modules.audio import render
+elif page == "🍅 Pomodoro":
     from modules.pomodoro import render
-elif page == "\U0001f916 Buscar con IA":
+elif page == "📊 Reportes":
+    from modules.reportes import render
+elif page == "🤖 Buscar con IA":
     from modules.ia import render
-elif page == "\U0001f4be Backup & Importar":
+elif page == "💾 Backup & Importar":
     from modules.backup import render
+elif page == "👤 Perfil":
+    from modules.perfil import render
 
 render()
