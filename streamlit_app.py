@@ -90,6 +90,7 @@ PAGES = [
     "🎯 Metas",
     "₡ Finanzas",
     "◎ Ahorros & Deudas",
+    "🛍️ Lista de deseos",
     "◉ Habitos",
     "📅 Calendario",
     "◣ Inventario",
@@ -161,6 +162,8 @@ elif page == "₡ Finanzas":
     from modules.finanzas import render
 elif page == "◎ Ahorros & Deudas":
     from modules.ahorros import render
+elif page == "🛍️ Lista de deseos":
+    from modules.wishlist import render
 elif page == "◉ Habitos":
     from modules.habitos import render
 elif page == "📅 Calendario":

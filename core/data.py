@@ -28,6 +28,8 @@ SCHEMAS = {
     "plan_blocks": {"id": str, "fecha": str, "hora": str, "tarea_id": str, "titulo": str, "duracion": int, "completado": bool, "ts": float},
     "notas_rapidas": {"id": str, "texto": str, "fecha": str, "ts": float},
     "metas_hist": {"id": str, "meta_id": str, "progreso": float, "fecha": str, "ts": float},
+    "wishlist_cats": {"id": str, "nombre": str, "emoji": str, "orden": int, "ts": float},
+    "wishlist": {"id": str, "cat_id": str, "nombre": str, "link": str, "imagen": str, "precio_usd": float, "precio_crc": float, "prioridad": str, "comprado": bool, "notas": str, "ts": float},
 }
 
 
