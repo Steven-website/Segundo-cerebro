@@ -185,15 +185,40 @@ def _render_habits_list(habitos):
         st.info("No hay habitos configurados.")
         return
 
-    for idx, h in habitos.iterrows():
-        checks = parse_checks(h.get("checks", "{}"))
-        today_str = datetime.now().strftime("%Y-%m-%d")
-        streak = _calc_streak(h)
-        hab_emoji = h.get('emoji', '\u2b50')
-        reps = [r.strip() for r in h.get("repeticiones", "").split(",") if r.strip()]
-        badge, badge_label = _get_streak_badge(streak)
+    today_str = datetime.now().strftime("%Y-%m-%d")
 
-        with st.container(border=True):
+    # Separate pending vs completed today
+    pending_habs = []
+    done_habs = []
+    for idx, h in habitos.iterrows():
+        if _is_day_complete(h, today_str):
+            done_habs.append(h)
+        else:
+            pending_habs.append(h)
+
+    # --- Pending habits ---
+    if not pending_habs:
+        st.success("Todos los habitos de hoy completados!")
+
+    for h in pending_habs:
+        _render_habit_card(h, habitos, today_str)
+
+    # --- Completed habits (collapsed) ---
+    if done_habs:
+        with st.expander(f"✅ Completados hoy ({len(done_habs)})"):
+            for h in done_habs:
+                _render_habit_card(h, habitos, today_str)
+
+
+def _render_habit_card(h, habitos, today_str):
+    """Render a single habit card."""
+    checks = parse_checks(h.get("checks", "{}"))
+    streak = _calc_streak(h)
+    hab_emoji = h.get('emoji', '\u2b50')
+    reps = [r.strip() for r in h.get("repeticiones", "").split(",") if r.strip()]
+    badge, badge_label = _get_streak_badge(streak)
+
+    with st.container(border=True):
             if reps:
                 # --- Sub-checks compact layout ---
                 today_val = checks.get(today_str, {})
