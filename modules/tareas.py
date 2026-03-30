@@ -63,6 +63,20 @@ def render():
 
             notas_txt = st.text_area("Notas", value=existing["notas"] if existing is not None else "", height=80)
 
+            subtareas_txt = st.text_area(
+                "Subtareas (una por linea)",
+                value=existing.get("subtareas", "") if existing is not None else "",
+                height=80,
+                help="Escribe una subtarea por linea. Marca completadas con [x] al inicio.",
+            )
+            recurrente_opts = ["", "diario", "semanal", "mensual"]
+            recurrente = st.selectbox(
+                "Recurrencia",
+                recurrente_opts,
+                format_func=lambda x: {"": "No se repite", "diario": "Diario", "semanal": "Semanal", "mensual": "Mensual"}.get(x, x),
+                index=recurrente_opts.index(existing.get("recurrente", "")) if existing is not None and existing.get("recurrente", "") in recurrente_opts else 0,
+            )
+
             col_s, col_c = st.columns(2)
             submitted = col_s.form_submit_button("Guardar", type="primary")
             cancelled = col_c.form_submit_button("Cancelar")
@@ -76,7 +90,11 @@ def render():
                     "fecha": str(fecha) if fecha else "",
                     "proyecto": proyecto,
                     "notas": notas_txt,
+                    "subtareas": subtareas_txt,
+                    "recurrente": recurrente,
                     "done": existing["done"] if existing is not None else False,
+                    "pinned": existing.get("pinned", False) if existing is not None else False,
+                    "archived": False,
                     "ts": now_ts(),
                 }
                 if edit_id and not tareas.empty:
@@ -94,6 +112,9 @@ def render():
     # --- Filter ---
     filtered = tareas.copy()
     if not filtered.empty:
+        # Hide archived by default
+        if "archived" in filtered.columns:
+            filtered = filtered[~filtered["archived"].fillna(False)]
         if status_filter == "Pendientes":
             filtered = filtered[~filtered["done"]]
         elif status_filter == "Completadas":
@@ -118,12 +139,19 @@ def render():
         _render_kanban(filtered, tareas)
         return
 
+    # Sort pinned first
+    if "pinned" in filtered.columns:
+        filtered["_pin_ord"] = (~filtered["pinned"].fillna(False)).astype(int)
+        filtered = filtered.sort_values(["_pin_ord", "_done_ord", "_pri_ord"] if "_done_ord" in filtered.columns else ["_pin_ord"])
+
     for _, t in filtered.iterrows():
         pri_emoji = PRIORITY_EMOJIS.get(t["prioridad"], "\u26aa")
         area_label = AREA_LABELS.get(t["area"], t["area"])
         fecha_str = f" \U0001f4c5 {t['fecha']}" if t.get("fecha") else ""
+        pin_icon = "\U0001f4cc " if t.get("pinned", False) else ""
+        recur_icon = " \U0001f501" if t.get("recurrente", "") else ""
 
-        col_check, col_body, col_edit, col_del = st.columns([0.5, 7, 0.5, 0.5])
+        col_check, col_body, col_pin, col_edit, col_del = st.columns([0.5, 6, 0.5, 0.5, 0.5])
         with col_check:
             done = st.checkbox("", value=t["done"], key=f"tcheck_{t['id']}", label_visibility="collapsed")
             if done != t["done"]:
@@ -132,7 +160,21 @@ def render():
                 st.rerun()
         with col_body:
             style = "~~" if t["done"] else ""
-            st.markdown(f"{pri_emoji} {style}**{t['titulo']}**{style} \u2022 {area_label}{fecha_str}")
+            st.markdown(f"{pin_icon}{pri_emoji} {style}**{t['titulo']}**{style} \u2022 {area_label}{fecha_str}{recur_icon}")
+            # Show subtasks inline
+            subtareas_str = t.get("subtareas", "")
+            if subtareas_str:
+                lines = [l.strip() for l in subtareas_str.split("\n") if l.strip()]
+                for line in lines[:3]:
+                    check = "\u2705" if line.startswith("[x]") else "\u2b1c"
+                    text = line.replace("[x] ", "").replace("[x]", "")
+                    st.caption(f"  {check} {text}")
+        with col_pin:
+            pin_label = "\U0001f4cc" if not t.get("pinned", False) else "\u274c"
+            if st.button(pin_label, key=f"tpin_{t['id']}"):
+                tareas.loc[tareas["id"] == t["id"], "pinned"] = not t.get("pinned", False)
+                save_df("tareas", tareas)
+                st.rerun()
         with col_edit:
             if st.button("\u270f\ufe0f", key=f"tedit_{t['id']}"):
                 st.session_state["tarea_editing"] = True

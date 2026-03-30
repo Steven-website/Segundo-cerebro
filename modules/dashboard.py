@@ -101,6 +101,35 @@ def render():
         else:
             st.info("Agrega habitos para ver el grafico.")
 
+    # --- More analytics ---
+    savings = get_df("savings")
+    debts = get_df("debts")
+    inventario = get_df("inventario")
+
+    col_chart3, col_chart4 = st.columns(2)
+
+    with col_chart3:
+        st.subheader("Metas de ahorro")
+        if not savings.empty:
+            sav_data = []
+            for _, s in savings.iterrows():
+                pct = min(s["current"] / s["goal"] * 100, 100) if s["goal"] > 0 else 0
+                sav_data.append({"Meta": s["name"][:20], "Progreso %": pct})
+            sav_chart = pd.DataFrame(sav_data)
+            st.bar_chart(sav_chart.set_index("Meta"), color=["#4a9e7a"])
+        else:
+            st.info("Agrega metas de ahorro.")
+
+    with col_chart4:
+        st.subheader("Inventario por categoria")
+        if not inventario.empty:
+            inv_grouped = inventario.groupby("cat").apply(lambda g: (g["val"] * g["qty"]).sum()).reset_index()
+            inv_grouped.columns = ["Categoria", "Valor"]
+            inv_grouped["Categoria"] = inv_grouped["Categoria"].str.capitalize()
+            st.bar_chart(inv_grouped.set_index("Categoria"), color=["#8a6ac9"])
+        else:
+            st.info("Agrega items al inventario.")
+
     st.divider()
 
     # --- Recent activity + Priority tasks ---
