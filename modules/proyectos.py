@@ -478,7 +478,7 @@ def _move_task_status(task, target_status, tareas):
 
 
 def _render_tasks_list(proj_tasks, tareas):
-    """Traditional list view for tasks."""
+    """Traditional list view for tasks with bulk operations."""
     pending = proj_tasks[~proj_tasks["done"]].copy()
     done_df = proj_tasks[proj_tasks["done"]].copy()
 
@@ -487,8 +487,68 @@ def _render_tasks_list(proj_tasks, tareas):
         pending["_pri"] = pending["prioridad"].map(pri_order).fillna(2)
         pending = pending.sort_values("_pri")
 
-    for _, t in pending.iterrows():
-        _render_task_row(t, tareas, show_detail=True)
+    # Bulk operations toggle
+    bulk_mode = st.checkbox("Seleccion multiple", key="bulk_mode")
+
+    if bulk_mode and not pending.empty:
+        selected = []
+        for _, t in pending.iterrows():
+            col_sel, col_body = st.columns([0.3, 5.7])
+            with col_sel:
+                if st.checkbox("", key=f"bulk_{t['id']}", label_visibility="collapsed"):
+                    selected.append(t["id"])
+            with col_body:
+                pri_emoji = PRIORITY_EMOJIS.get(t["prioridad"], "")
+                st.markdown(f"{pri_emoji} **{t['titulo']}**")
+                info = []
+                if t.get("fecha"):
+                    info.append(f"📅 {t['fecha']}")
+                tag = t.get("etiqueta", "")
+                if tag:
+                    info.append(ETIQUETAS.get(tag, tag))
+                if info:
+                    st.caption(" | ".join(info))
+
+        if selected:
+            st.divider()
+            st.caption(f"{len(selected)} tarea(s) seleccionada(s)")
+            bc1, bc2, bc3, bc4 = st.columns(4)
+            with bc1:
+                if st.button("✅ Completar", use_container_width=True, type="primary"):
+                    for tid in selected:
+                        tareas.loc[tareas["id"] == tid, "done"] = True
+                    save_df("tareas", tareas)
+                    st.rerun()
+            with bc2:
+                new_pri = st.selectbox("Prioridad", ["alta", "media", "baja"],
+                                       format_func=lambda x: PRIORITY_LABELS.get(x, x),
+                                       key="bulk_pri", label_visibility="collapsed")
+                if st.button("Cambiar prioridad", use_container_width=True):
+                    for tid in selected:
+                        tareas.loc[tareas["id"] == tid, "prioridad"] = new_pri
+                    save_df("tareas", tareas)
+                    st.rerun()
+            with bc3:
+                new_tag = st.selectbox("Etiqueta", list(ETIQUETAS.keys()),
+                                       format_func=lambda x: ETIQUETAS.get(x, x),
+                                       key="bulk_tag", label_visibility="collapsed")
+                if st.button("Cambiar etiqueta", use_container_width=True):
+                    for tid in selected:
+                        tareas.loc[tareas["id"] == tid, "etiqueta"] = new_tag
+                    save_df("tareas", tareas)
+                    st.rerun()
+            with bc4:
+                if st.button("🗑️ Eliminar", use_container_width=True):
+                    for tid in selected:
+                        row = tareas[tareas["id"] == tid]
+                        if not row.empty:
+                            soft_delete(row.iloc[0], "tarea", row.iloc[0]["titulo"])
+                    tareas = tareas[~tareas["id"].isin(selected)]
+                    save_df("tareas", tareas)
+                    st.rerun()
+    else:
+        for _, t in pending.iterrows():
+            _render_task_row(t, tareas, show_detail=True)
 
     if not done_df.empty:
         with st.expander(f"✅ Completadas ({len(done_df)})"):
