@@ -24,6 +24,7 @@ SCHEMAS = {
     "tx_recurrentes": {"id": str, "type": str, "desc": str, "amt": float, "cat": str, "frecuencia": str, "dia": int, "activa": bool, "ts": float},
     "budget": {"cat": str, "amt": float},
     "papelera": {"id": str, "tipo": str, "nombre": str, "data": str, "deleted_ts": float},
+    "savings_hist": {"id": str, "saving_id": str, "monto": float, "balance": float, "fecha": str, "ts": float},
 }
 
 

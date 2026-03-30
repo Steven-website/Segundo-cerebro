@@ -100,17 +100,30 @@ def render():
                     amount = st.number_input("Abonar", min_value=0.0, step=1000.0, key=f"sav_amt_{s['id']}", label_visibility="collapsed")
                     if st.button("Abonar", key=f"sav_add_{s['id']}", use_container_width=True):
                         if amount > 0:
-                            savings.loc[savings["id"] == s["id"], "current"] += amount
+                            new_balance = s["current"] + amount
+                            savings.loc[savings["id"] == s["id"], "current"] = new_balance
                             save_df("savings", savings)
+                            _record_savings_contribution(s["id"], amount, new_balance)
                             st.rerun()
-                    if st.button("✏️", key=f"sav_edit_{s['id']}", use_container_width=True):
-                        st.session_state["sav_editing"] = True
-                        st.session_state["sav_edit_id"] = s["id"]
-                        st.rerun()
+                    c_edit, c_chart = st.columns(2)
+                    with c_edit:
+                        if st.button("✏️", key=f"sav_edit_{s['id']}", use_container_width=True):
+                            st.session_state["sav_editing"] = True
+                            st.session_state["sav_edit_id"] = s["id"]
+                            st.rerun()
+                    with c_chart:
+                        if st.button("📈", key=f"sav_chart_{s['id']}", use_container_width=True, help="Historial"):
+                            st.session_state["sav_history_id"] = s["id"]
+                            st.rerun()
                     if confirm_delete(s["id"], s["name"], "sav"):
                         savings = savings[savings["id"] != s["id"]]
                         save_df("savings", savings)
                         st.rerun()
+
+    # --- Savings history panel ---
+    sav_hist_id = st.session_state.get("sav_history_id")
+    if sav_hist_id and not savings.empty:
+        _render_savings_history(sav_hist_id, savings)
 
     st.divider()
 
@@ -251,3 +264,62 @@ def _render_payment_history(debt_id, debts):
 
         for _, p in debt_payments.iterrows():
             st.markdown(f"- **{p['fecha']}** - {fmt(p['monto'])} - {p.get('nota', '')}")
+
+
+def _record_savings_contribution(saving_id, amount, new_balance):
+    """Record a savings contribution in history."""
+    hist = get_df("savings_hist")
+    new_entry = {
+        "id": uid(),
+        "saving_id": saving_id,
+        "monto": amount,
+        "balance": new_balance,
+        "fecha": datetime.now().strftime("%Y-%m-%d"),
+        "ts": now_ts(),
+    }
+    hist = pd.concat([pd.DataFrame([new_entry]), hist], ignore_index=True)
+    save_df("savings_hist", hist)
+
+
+def _render_savings_history(saving_id, savings):
+    """Show contribution history and progress chart for a savings goal."""
+    sav_match = savings[savings["id"] == saving_id]
+    if sav_match.empty:
+        return
+
+    sav = sav_match.iloc[0]
+    hist = get_df("savings_hist")
+    sav_hist = hist[hist["saving_id"] == saving_id].sort_values("ts", ascending=True) if not hist.empty else pd.DataFrame()
+
+    st.divider()
+    col_t, col_close = st.columns([5, 1])
+    with col_t:
+        st.subheader(f"Historial: {sav['name']}")
+    with col_close:
+        if st.button("Cerrar", key="close_sav_hist"):
+            st.session_state["sav_history_id"] = None
+            st.rerun()
+
+    if sav_hist.empty:
+        st.info("No hay aportes registrados. Los proximos aportes apareceran aqui.")
+        return
+
+    # Progress chart
+    chart_data = sav_hist[["fecha", "balance"]].copy()
+    chart_data.columns = ["Fecha", "Balance"]
+    chart_data = chart_data.set_index("Fecha")
+    st.line_chart(chart_data, color=["#4a9e7a"])
+
+    # Stats
+    total_contributions = sav_hist["monto"].sum()
+    num_contributions = len(sav_hist)
+    avg_contribution = total_contributions / num_contributions if num_contributions > 0 else 0
+
+    sc1, sc2, sc3 = st.columns(3)
+    sc1.metric("Total aportado", fmt(total_contributions))
+    sc2.metric("Aportes", num_contributions)
+    sc3.metric("Promedio por aporte", fmt(avg_contribution))
+
+    # Contribution list
+    for _, h in sav_hist.sort_values("ts", ascending=False).iterrows():
+        st.markdown(f"- **{h['fecha']}** — Aporte: {fmt(h['monto'])} — Balance: {fmt(h['balance'])}")
