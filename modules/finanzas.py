@@ -1,9 +1,11 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, date
 from core.data import get_df, save_df, uid, now_ts
 from core.constants import CAT_ICONS, TX_CATS_GASTO, TX_CATS_INGRESO, BUDGET_DEFAULT, fmt
 from core.utils import confirm_delete, export_csv
+
+FREQ_OPTIONS = {"mensual": "Mensual", "quincenal": "Quincenal", "semanal": "Semanal"}
 
 
 def _get_month_txs(txs, year=None, month=None):
@@ -212,3 +214,127 @@ def render():
                             txs = txs[txs["id"] != tx["id"]]
                             save_df("txs", txs)
                             st.rerun()
+
+    # ═══ SUSCRIPCIONES / RECURRENTES ═══
+    st.divider()
+    _render_recurrentes()
+
+
+def _render_recurrentes():
+    """Manage recurring transactions (subscriptions)."""
+    st.subheader("Suscripciones y recurrentes")
+
+    recurrentes = get_df("tx_recurrentes")
+
+    col_add, _ = st.columns([1, 5])
+    with col_add:
+        if st.button("+ Suscripcion", use_container_width=True):
+            st.session_state["rec_editing"] = True
+            st.session_state["rec_edit_id"] = None
+
+    # --- Add/Edit form ---
+    if st.session_state.get("rec_editing"):
+        edit_id = st.session_state.get("rec_edit_id")
+        existing = None
+        if edit_id and not recurrentes.empty:
+            matches = recurrentes[recurrentes["id"] == edit_id]
+            if not matches.empty:
+                existing = matches.iloc[0]
+
+        with st.form("rec_form", clear_on_submit=True):
+            st.subheader("Editar recurrente" if existing is not None else "Nueva recurrente")
+            desc = st.text_input("Descripcion", value=existing["desc"] if existing is not None else "")
+            c1, c2, c3 = st.columns(3)
+            tx_type = c1.selectbox("Tipo", ["gasto", "ingreso"],
+                                   index=0 if existing is None or existing["type"] == "gasto" else 1,
+                                   format_func=lambda x: "Gasto" if x == "gasto" else "Ingreso")
+            amt = c2.number_input("Monto", min_value=0.0, step=1000.0,
+                                  value=float(existing["amt"]) if existing is not None else 0.0)
+            cats = TX_CATS_INGRESO if (existing is not None and existing["type"] == "ingreso") or (existing is None and tx_type == "ingreso") else TX_CATS_GASTO
+            cat_idx = cats.index(existing["cat"]) if existing is not None and existing["cat"] in cats else 0
+            cat = c3.selectbox("Categoria", cats, index=cat_idx,
+                               format_func=lambda x: f"{CAT_ICONS.get(x, '')} {x.capitalize()}")
+
+            c4, c5 = st.columns(2)
+            freq_keys = list(FREQ_OPTIONS.keys())
+            freq = c4.selectbox("Frecuencia", freq_keys,
+                                index=freq_keys.index(existing["frecuencia"]) if existing is not None and existing.get("frecuencia") in freq_keys else 0,
+                                format_func=lambda x: FREQ_OPTIONS[x])
+            dia = c5.number_input("Dia del mes/semana", min_value=1, max_value=31, step=1,
+                                  value=int(existing["dia"]) if existing is not None else 1)
+
+            col_s, col_c = st.columns(2)
+            submitted = col_s.form_submit_button("Guardar", type="primary")
+            cancelled = col_c.form_submit_button("Cancelar")
+
+            if submitted and desc.strip() and amt > 0:
+                new_row = {
+                    "id": edit_id or uid(), "type": tx_type, "desc": desc.strip(),
+                    "amt": amt, "cat": cat, "frecuencia": freq, "dia": dia,
+                    "activa": True, "ts": now_ts(),
+                }
+                if edit_id and not recurrentes.empty:
+                    recurrentes = recurrentes[recurrentes["id"] != edit_id]
+                save_df("tx_recurrentes", pd.concat([pd.DataFrame([new_row]), recurrentes], ignore_index=True))
+                st.session_state["rec_editing"] = False
+                st.session_state["rec_edit_id"] = None
+                st.rerun()
+            if cancelled:
+                st.session_state["rec_editing"] = False
+                st.session_state["rec_edit_id"] = None
+                st.rerun()
+
+    # --- List ---
+    if recurrentes.empty:
+        st.info("No hay suscripciones configuradas.")
+        return
+
+    active = recurrentes[recurrentes["activa"] == True] if "activa" in recurrentes.columns else recurrentes
+    inactive = recurrentes[recurrentes["activa"] == False] if "activa" in recurrentes.columns else pd.DataFrame()
+
+    total_mensual = 0
+    for _, r in active.iterrows():
+        amt = float(r["amt"])
+        freq = r.get("frecuencia", "mensual")
+        if freq == "quincenal":
+            amt *= 2
+        elif freq == "semanal":
+            amt *= 4
+        if r["type"] == "gasto":
+            total_mensual += amt
+        else:
+            total_mensual -= amt
+
+    st.caption(f"Gasto mensual estimado en suscripciones: **{fmt(total_mensual)}**")
+
+    for _, r in active.iterrows():
+        icon = CAT_ICONS.get(r["cat"], "\U0001f4e6")
+        sign = "-" if r["type"] == "gasto" else "+"
+        color = "red" if r["type"] == "gasto" else "green"
+        freq_label = FREQ_OPTIONS.get(r.get("frecuencia", "mensual"), "Mensual")
+
+        col_info, col_actions = st.columns([5, 1])
+        with col_info:
+            st.markdown(f"{icon} **{r['desc']}** \u2022 :{color}[{sign}{fmt(r['amt'])}] \u2022 {freq_label} \u2022 Dia {int(r['dia'])}")
+        with col_actions:
+            ca, cb = st.columns(2)
+            with ca:
+                if st.button("✏️", key=f"rec_edit_{r['id']}"):
+                    st.session_state["rec_editing"] = True
+                    st.session_state["rec_edit_id"] = r["id"]
+                    st.rerun()
+            with cb:
+                if confirm_delete(r["id"], r["desc"], "rec"):
+                    recurrentes = recurrentes[recurrentes["id"] != r["id"]]
+                    save_df("tx_recurrentes", recurrentes)
+                    st.rerun()
+
+    if not inactive.empty:
+        with st.expander(f"Inactivas ({len(inactive)})"):
+            for _, r in inactive.iterrows():
+                icon = CAT_ICONS.get(r["cat"], "\U0001f4e6")
+                st.markdown(f"~~{icon} {r['desc']} \u2022 {fmt(r['amt'])}~~")
+                if st.button("Reactivar", key=f"rec_react_{r['id']}"):
+                    recurrentes.loc[recurrentes["id"] == r["id"], "activa"] = True
+                    save_df("tx_recurrentes", recurrentes)
+                    st.rerun()

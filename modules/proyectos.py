@@ -497,27 +497,75 @@ def _render_task_detail(task, tareas, proyectos):
     st.divider()
 
     # ═══ SUBTAREAS ═══
-    st.subheader("Subtareas")
     subs = _parse_subtareas(task.get("subtareas", ""))
+    sub_pending = sum(1 for s in subs if not s.get("done"))
+    sub_done_count = sum(1 for s in subs if s.get("done"))
+
+    col_sub_header, col_sub_view = st.columns([3, 1])
+    with col_sub_header:
+        st.subheader(f"Subtareas ({sub_done_count}/{len(subs)})" if subs else "Subtareas")
+    with col_sub_view:
+        sub_view = st.selectbox("Vista", ["Lista", "Kanban"], key="sub_view_mode", label_visibility="collapsed") if subs else "Lista"
 
     if subs:
         updated = False
-        for i, sub in enumerate(subs):
-            col_c, col_t, col_date = st.columns([0.5, 4.5, 1.5])
-            with col_c:
-                checked = st.checkbox("", value=sub.get("done", False), key=f"sub_{task_id}_{i}", label_visibility="collapsed")
-                if checked != sub.get("done", False):
-                    subs[i]["done"] = checked
-                    updated = True
-            with col_t:
-                style = "~~" if checked else ""
-                st.markdown(f"{style}{sub['text']}{style}")
-            with col_date:
-                sub_fecha = sub.get("fecha", "")
-                if sub_fecha:
-                    today = datetime.now().strftime("%Y-%m-%d")
-                    color = "red" if sub_fecha < today and not checked else "gray"
-                    st.caption(f":{color}[📅 {sub_fecha}]")
+
+        if sub_view == "Kanban":
+            col_pend, col_done = st.columns(2)
+            with col_pend:
+                st.markdown("**⬜ Pendientes**")
+                for i, sub in enumerate(subs):
+                    if sub.get("done"):
+                        continue
+                    with st.container(border=True):
+                        col_c, col_t = st.columns([0.5, 5.5])
+                        with col_c:
+                            checked = st.checkbox("", value=False, key=f"sub_{task_id}_{i}", label_visibility="collapsed")
+                            if checked:
+                                subs[i]["done"] = True
+                                updated = True
+                        with col_t:
+                            st.markdown(sub["text"])
+                            sub_fecha = sub.get("fecha", "")
+                            if sub_fecha:
+                                today = datetime.now().strftime("%Y-%m-%d")
+                                color = "red" if sub_fecha < today else "gray"
+                                st.caption(f":{color}[📅 {sub_fecha}]")
+                if sub_pending == 0:
+                    st.caption("—")
+            with col_done:
+                st.markdown("**✅ Completadas**")
+                for i, sub in enumerate(subs):
+                    if not sub.get("done"):
+                        continue
+                    with st.container(border=True):
+                        col_c, col_t = st.columns([0.5, 5.5])
+                        with col_c:
+                            checked = st.checkbox("", value=True, key=f"sub_{task_id}_{i}", label_visibility="collapsed")
+                            if not checked:
+                                subs[i]["done"] = False
+                                updated = True
+                        with col_t:
+                            st.markdown(f"~~{sub['text']}~~")
+                if sub_done_count == 0:
+                    st.caption("—")
+        else:
+            for i, sub in enumerate(subs):
+                col_c, col_t, col_date = st.columns([0.5, 4.5, 1.5])
+                with col_c:
+                    checked = st.checkbox("", value=sub.get("done", False), key=f"sub_{task_id}_{i}", label_visibility="collapsed")
+                    if checked != sub.get("done", False):
+                        subs[i]["done"] = checked
+                        updated = True
+                with col_t:
+                    style = "~~" if checked else ""
+                    st.markdown(f"{style}{sub['text']}{style}")
+                with col_date:
+                    sub_fecha = sub.get("fecha", "")
+                    if sub_fecha:
+                        today = datetime.now().strftime("%Y-%m-%d")
+                        color = "red" if sub_fecha < today and not checked else "gray"
+                        st.caption(f":{color}[📅 {sub_fecha}]")
 
         if updated:
             tareas.loc[tareas["id"] == task_id, "subtareas"] = _save_subtareas(subs)
