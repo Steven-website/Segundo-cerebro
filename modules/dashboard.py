@@ -54,6 +54,15 @@ def render():
         if not overdue.empty:
             alerts.append(("warning", f"⚠️ {len(overdue)} tarea(s) vencida(s)", "Revisa tus proyectos"))
 
+    # Tasks due in next 3 days
+    if not tareas.empty:
+        soon_str = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
+        upcoming = tareas[(~tareas["done"]) & (tareas["fecha"] != "") & (tareas["fecha"] >= today_str) & (tareas["fecha"] <= soon_str)]
+        if not upcoming.empty:
+            names = ", ".join(upcoming["titulo"].head(3).tolist())
+            extra = f" (+{len(upcoming)-3} mas)" if len(upcoming) > 3 else ""
+            alerts.append(("info", f"📅 {len(upcoming)} tarea(s) vence(n) pronto", f"{names}{extra}"))
+
     # Habits not done today
     today_habs = _get_today_habits(habitos)
     if not today_habs.empty:

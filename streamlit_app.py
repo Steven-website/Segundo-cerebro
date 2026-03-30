@@ -94,6 +94,7 @@ PAGES = [
     "🍅 Pomodoro",
     "📊 Reportes",
     "💾 Backup & Importar",
+    "🗑️ Papelera",
     "👤 Perfil",
 ]
 
@@ -168,6 +169,8 @@ elif page == "📊 Reportes":
     from modules.reportes import render
 elif page == "💾 Backup & Importar":
     from modules.backup import render
+elif page == "🗑️ Papelera":
+    from modules.papelera import render
 elif page == "👤 Perfil":
     from modules.perfil import render
 
