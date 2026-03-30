@@ -341,70 +341,66 @@ def _render_stats(habitos):
 
     st.divider()
 
-    # Per-habit monthly view
+    # Per-habit summary (compact)
     for _, h in habitos.iterrows():
-        checks = parse_checks(h.get("checks", "{}"))
         done_days, total_days, pct = _get_month_stats(h, year, month)
-        max_streak = _calc_max_streak(h)
         current_streak = _calc_streak(h)
-
         hab_emoji = h.get("emoji", "\u2b50")
+        badge, _ = _get_streak_badge(current_streak)
+
         with st.container(border=True):
-            st.markdown(f"### {hab_emoji} {h['name']}")
+            col_name, col_pct, col_days, col_streak = st.columns([3, 1, 1.5, 1])
+            with col_name:
+                st.markdown(f"{hab_emoji} **{h['name']}**")
+            with col_pct:
+                st.markdown(f"**{pct}%**")
+            with col_days:
+                st.caption(f"{done_days}/{total_days} dias")
+            with col_streak:
+                st.markdown(f"\U0001f525 {current_streak} {badge}")
 
-            # Metrics row
-            mc1, mc2, mc3, mc4 = st.columns(4)
-            mc1.metric("Cumplimiento", f"{pct}%")
-            mc2.metric("Dias", f"{done_days}/{total_days}")
-            badge, badge_label = _get_streak_badge(current_streak)
-            streak_display = f"\U0001f525 {current_streak}"
-            if badge:
-                streak_display += f" {badge}"
-            mc3.metric("Racha actual", streak_display)
-            mc4.metric("Racha maxima", f"\U0001f3c6 {max_streak}")
-            if badge_label:
-                st.success(f"{badge} {badge_label} Sigue asi!")
+            st.progress(pct / 100)
 
-            # Monthly calendar grid
-            st.caption(f"{MONTH_NAMES[month - 1]} {year}")
-            days_in_month = calendar.monthrange(year, month)[1]
-            first_weekday = calendar.monthrange(year, month)[0]
-            # Weekday of first day (0=Mon)
-            first_weekday = datetime(year, month, 1).weekday()
+            # Expandable calendar
+            with st.expander("Ver calendario"):
+                max_streak = _calc_max_streak(h)
+                badge_full, badge_label = _get_streak_badge(current_streak)
+                st.caption(f"Racha maxima: \U0001f3c6 {max_streak}")
+                if badge_label:
+                    st.caption(f"{badge_full} {badge_label}")
 
-            # Day headers
-            day_headers = st.columns(7)
-            for i, name in enumerate(["L", "M", "X", "J", "V", "S", "D"]):
-                day_headers[i].markdown(f"**{name}**")
+                days_in_month = calendar.monthrange(year, month)[1]
+                first_weekday = datetime(year, month, 1).weekday()
 
-            day_num = 1
-            today_str = datetime.now().strftime("%Y-%m-%d")
-            for week in range(6):
-                if day_num > days_in_month:
-                    break
-                cols = st.columns(7)
-                for weekday in range(7):
-                    with cols[weekday]:
-                        if week == 0 and weekday < first_weekday:
-                            st.markdown("")
-                        elif day_num <= days_in_month:
-                            ds = f"{year}-{month:02d}-{day_num:02d}"
-                            full = _is_day_complete(h, ds)
-                            partial = _day_pct(h, ds)
-                            is_today = ds == today_str
-                            if full:
-                                st.markdown(f":green[**{day_num}** ✓]")
-                            elif partial > 0:
-                                pct_label = int(partial * 100)
-                                st.markdown(f":orange[**{day_num}** {pct_label}%]")
-                            elif is_today:
-                                st.markdown(f":orange[**{day_num}**]")
-                            else:
-                                st.markdown(f"{day_num}")
-                            day_num += 1
+                day_headers = st.columns(7)
+                for i, name in enumerate(["L", "M", "X", "J", "V", "S", "D"]):
+                    day_headers[i].markdown(f"**{name}**")
 
-            # Progress bar
-            st.progress(pct / 100, text=f"{pct}% del mes")
+                day_num = 1
+                today_str = datetime.now().strftime("%Y-%m-%d")
+                for week in range(6):
+                    if day_num > days_in_month:
+                        break
+                    cols = st.columns(7)
+                    for weekday in range(7):
+                        with cols[weekday]:
+                            if week == 0 and weekday < first_weekday:
+                                st.markdown("")
+                            elif day_num <= days_in_month:
+                                ds = f"{year}-{month:02d}-{day_num:02d}"
+                                full = _is_day_complete(h, ds)
+                                partial = _day_pct(h, ds)
+                                is_today = ds == today_str
+                                if full:
+                                    st.markdown(f":green[**{day_num}** ✓]")
+                                elif partial > 0:
+                                    pct_label = int(partial * 100)
+                                    st.markdown(f":orange[**{day_num}** {pct_label}%]")
+                                elif is_today:
+                                    st.markdown(f":orange[**{day_num}**]")
+                                else:
+                                    st.markdown(f"{day_num}")
+                                day_num += 1
 
     # Best day of week analysis
     st.divider()
