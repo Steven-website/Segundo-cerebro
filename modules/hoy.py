@@ -127,8 +127,65 @@ def render():
             for _, t in tasks_no_date.iterrows():
                 _render_today_task(t, tareas, proyectos, overdue=False)
 
+    # ═══ HABITOS DE HOY ═══
+    st.divider()
+    _render_today_habits()
+
 
 import pandas as pd
+
+
+def _render_today_habits():
+    """Show today's habits with toggle."""
+    from core.data import get_df as _get_df, save_df as _save_df
+    from core.utils import parse_checks
+    from core.constants import HABIT_FREQ
+    import json as _json
+
+    habitos = _get_df("habitos")
+    if habitos.empty:
+        return
+
+    # Filter by frequency
+    dow = datetime.now().weekday()
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_habs = []
+    for _, h in habitos.iterrows():
+        freq = h.get("freq", "diario")
+        if freq == "laborables" and dow >= 5:
+            continue
+        if freq == "fines" and dow < 5:
+            continue
+        today_habs.append(h)
+
+    if not today_habs:
+        return
+
+    done_count = 0
+    for h in today_habs:
+        checks = parse_checks(h.get("checks", "{}"))
+        if checks.get(today_str, False):
+            done_count += 1
+
+    st.subheader(f"Habitos de hoy ({done_count}/{len(today_habs)})")
+
+    for h in today_habs:
+        checks = parse_checks(h.get("checks", "{}"))
+        done_today = checks.get(today_str, False)
+        emoji = h.get("emoji", "⭐")
+
+        with st.container(border=True):
+            col_c, col_n = st.columns([0.5, 5.5])
+            with col_c:
+                new_done = st.checkbox("", value=done_today, key=f"hoy_hab_{h['id']}", label_visibility="collapsed")
+                if new_done != done_today:
+                    checks[today_str] = new_done
+                    habitos.loc[habitos["id"] == h["id"], "checks"] = _json.dumps(checks)
+                    _save_df("habitos", habitos)
+                    st.rerun()
+            with col_n:
+                status = "~~" if done_today else ""
+                st.markdown(f"{emoji} {status}**{h['name']}**{status}")
 
 
 def _render_today_task(t, tareas, proyectos, overdue=False):
