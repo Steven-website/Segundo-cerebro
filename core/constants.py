@@ -54,6 +54,8 @@ HABIT_FREQ = {
     "diario": "Todos los dias",
     "laborables": "Lunes a viernes",
     "fines": "Fines de semana",
+    "quincenal": "Quincenal (1 y 15)",
+    "mensual": "Mensual",
 }
 
 INV_CATS = ["electrodomesticos", "electronica", "muebles", "cocina", "ropa", "herramientas", "jardin", "seguridad", "otro"]

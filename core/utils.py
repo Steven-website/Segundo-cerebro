@@ -5,6 +5,24 @@ from datetime import datetime
 from core.constants import AREAS
 
 
+def habit_applies_today(habit, check_date=None):
+    """Check if a habit applies on the given date (or today)."""
+    d = check_date or datetime.now()
+    freq = habit.get("freq", "diario")
+    dow = d.weekday()
+    day = d.day
+
+    if freq == "laborables":
+        return dow < 5
+    elif freq == "fines":
+        return dow >= 5
+    elif freq == "quincenal":
+        return day == 1 or day == 15
+    elif freq == "mensual":
+        return day == 1
+    return True  # diario
+
+
 def parse_checks(data):
     if isinstance(data, dict):
         return data
