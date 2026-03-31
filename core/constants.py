@@ -54,8 +54,15 @@ HABIT_FREQ = {
     "diario": "Todos los dias",
     "laborables": "Lunes a viernes",
     "fines": "Fines de semana",
+    "lunes": "Todos los lunes",
+    "martes": "Todos los martes",
+    "miercoles": "Todos los miercoles",
+    "jueves": "Todos los jueves",
+    "viernes": "Todos los viernes",
+    "sabado": "Todos los sabados",
+    "domingo": "Todos los domingos",
     "quincenal": "Quincenal (1 y 15)",
-    "mensual": "Mensual",
+    "mensual": "Mensual (dia 1)",
 }
 
 INV_CATS = ["electrodomesticos", "electronica", "muebles", "cocina", "ropa", "herramientas", "jardin", "seguridad", "otro"]
