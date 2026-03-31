@@ -1,7 +1,7 @@
 import streamlit as st
 import json
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from core.data import get_df, save_df
 from core.constants import AREA_LABELS, PRIORITY_LABELS
 from core.utils import PRIORITY_EMOJIS
@@ -158,6 +158,32 @@ def _render_pendientes():
     c1.metric("Tareas hoy", f"{total_tasks}", delta=f"{overdue_count} atrasadas" if overdue_count else None, delta_color="inverse")
     c2.metric("Subtareas hoy", f"{total_subs}")
     c3.metric("Habitos", f"{habs_done}/{total_habs}")
+
+    # ═══ TASK SUMMARY BY PERIOD ═══
+    if not tareas.empty:
+        pending_all = tareas[(~tareas["done"]) & (tareas["fecha"] != "")]
+        if not pending_all.empty:
+            now_dt = datetime.now()
+            # Week: rest of this week (until Sunday)
+            days_to_sunday = 6 - now_dt.weekday()
+            end_week = (now_dt + timedelta(days=days_to_sunday)).strftime("%Y-%m-%d")
+            # Biweekly
+            end_quincena = (now_dt + timedelta(days=14)).strftime("%Y-%m-%d")
+            # Month end
+            if now_dt.month == 12:
+                end_month = f"{now_dt.year + 1}-01-01"
+            else:
+                end_month = f"{now_dt.year}-{now_dt.month + 1:02d}-01"
+
+            week_tasks = pending_all[(pending_all["fecha"] >= today) & (pending_all["fecha"] <= end_week)]
+            quin_tasks = pending_all[(pending_all["fecha"] >= today) & (pending_all["fecha"] <= end_quincena)]
+            month_tasks = pending_all[(pending_all["fecha"] >= today) & (pending_all["fecha"] < end_month)]
+
+            with st.expander("📊 Resumen de tareas pendientes"):
+                r1, r2, r3 = st.columns(3)
+                r1.metric("Esta semana", len(week_tasks))
+                r2.metric("Proximos 15 dias", len(quin_tasks))
+                r3.metric("Este mes", len(month_tasks))
 
     st.divider()
 

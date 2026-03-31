@@ -5,6 +5,12 @@ from datetime import datetime
 from core.constants import AREAS
 
 
+_DAY_FREQ_MAP = {
+    "lunes": 0, "martes": 1, "miercoles": 2, "jueves": 3,
+    "viernes": 4, "sabado": 5, "domingo": 6,
+}
+
+
 def habit_applies_today(habit, check_date=None):
     """Check if a habit applies on the given date (or today)."""
     d = check_date or datetime.now()
@@ -16,6 +22,8 @@ def habit_applies_today(habit, check_date=None):
         return dow < 5
     elif freq == "fines":
         return dow >= 5
+    elif freq in _DAY_FREQ_MAP:
+        return dow == _DAY_FREQ_MAP[freq]
     elif freq == "quincenal":
         return day == 1 or day == 15
     elif freq == "mensual":
