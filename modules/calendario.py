@@ -309,15 +309,8 @@ def _render_weekly(tareas, habitos, proyectos):
 
             # Habits for this day
             if not habitos.empty:
-                dow = day_date.weekday()
-                day_habs = []
-                for _, h in habitos.iterrows():
-                    freq = h.get("freq", "diario")
-                    if freq == "laborables" and dow >= 5:
-                        continue
-                    if freq == "fines" and dow < 5:
-                        continue
-                    day_habs.append(h)
+                from core.utils import habit_applies_today
+                day_habs = [h for _, h in habitos.iterrows() if habit_applies_today(h, day_date)]
 
                 if day_habs:
                     st.markdown("**Habitos:**")

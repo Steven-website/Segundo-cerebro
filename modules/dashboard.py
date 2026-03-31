@@ -9,16 +9,8 @@ from core.utils import is_done_today, parse_checks, PRIORITY_EMOJIS
 def _get_today_habits(habitos_df):
     if habitos_df.empty:
         return habitos_df
-    dow = datetime.now().weekday()
-    mask = []
-    for _, h in habitos_df.iterrows():
-        freq = h.get("freq", "diario")
-        if freq == "laborables":
-            mask.append(dow < 5)
-        elif freq == "fines":
-            mask.append(dow >= 5)
-        else:
-            mask.append(True)
+    from core.utils import habit_applies_today
+    mask = [habit_applies_today(h) for _, h in habitos_df.iterrows()]
     return habitos_df[mask]
 
 

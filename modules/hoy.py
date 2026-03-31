@@ -139,19 +139,13 @@ def _render_pendientes():
 
     # === HABITS ===
     from core.data import get_df as _get_df
-    from core.utils import is_done_today
-    from core.constants import HABIT_FREQ
+    from core.utils import is_done_today, habit_applies_today
     habitos = _get_df("habitos")
-    dow = datetime.now().weekday()
     today_habs = []
     if not habitos.empty:
         for _, h in habitos.iterrows():
-            freq = h.get("freq", "diario")
-            if freq == "laborables" and dow >= 5:
-                continue
-            if freq == "fines" and dow < 5:
-                continue
-            today_habs.append(h)
+            if habit_applies_today(h):
+                today_habs.append(h)
     habs_done = sum(1 for h in today_habs if is_done_today(h))
 
     # === METRICS ===
