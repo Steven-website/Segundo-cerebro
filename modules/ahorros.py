@@ -6,6 +6,17 @@ from core.constants import fmt
 from core.utils import confirm_delete, export_csv
 
 
+def _register_tx(cat, desc, amount):
+    """Register a transaction in Finanzas automatically."""
+    txs = get_df("txs")
+    new_tx = {
+        "id": uid(), "type": "gasto", "desc": desc, "amt": amount,
+        "cat": cat, "fecha": datetime.now().strftime("%Y-%m-%d"), "ts": now_ts(),
+    }
+    txs = pd.concat([pd.DataFrame([new_tx]), txs], ignore_index=True)
+    save_df("txs", txs)
+
+
 def render():
     st.header("Ahorros & Deudas")
 
@@ -104,6 +115,7 @@ def render():
                             savings.loc[savings["id"] == s["id"], "current"] = new_balance
                             save_df("savings", savings)
                             _record_savings_contribution(s["id"], amount, new_balance)
+                            _register_tx("ahorro", f"Ahorro: {s['name']}", amount)
                             st.rerun()
                     c_edit, c_chart = st.columns(2)
                     with c_edit:
@@ -201,8 +213,8 @@ def render():
                             new_paid = min(d["paid"] + amount, d["total"])
                             debts.loc[debts["id"] == d["id"], "paid"] = new_paid
                             save_df("debts", debts)
-                            # Record payment in history
                             _record_payment(d["id"], amount, d["name"])
+                            _register_tx("deudas", f"Pago deuda: {d['name']}", amount)
                             st.rerun()
                     if st.button("📋 Historial", key=f"debt_hist_{d['id']}", use_container_width=True):
                         st.session_state["debt_history_id"] = d["id"]
