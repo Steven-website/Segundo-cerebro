@@ -1,7 +1,7 @@
 import streamlit as st
 from core.data import get_df, save_df
 from core.constants import AREA_LABELS, fmt
-from core.utils import PRIORITY_EMOJIS
+from core.utils import PRIORITY_EMOJIS, mark_task_done
 
 
 def render():
@@ -114,7 +114,7 @@ def _render_search_actions(result, index):
             if not result.get("done", False):
                 if st.button("✅", key=f"sr_done_{index}", help="Completar", use_container_width=True):
                     tareas = get_df("tareas")
-                    tareas.loc[tareas["id"] == r_id, "done"] = True
+                    mark_task_done(tareas, r_id)
                     save_df("tareas", tareas)
                     st.rerun()
         with c2:

@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from core.data import get_df, save_df, uid, now_ts
 from core.constants import AREAS, AREA_LABELS, PRIORITY_LABELS
-from core.utils import PRIORITY_EMOJIS, confirm_delete, export_csv, get_area_id
+from core.utils import PRIORITY_EMOJIS, confirm_delete, export_csv, get_area_id, mark_task_done
 
 
 def _auto_generate_recurring(tareas):
@@ -381,7 +381,7 @@ def _render_kanban(filtered, tareas):
                     if t.get("fecha"):
                         st.caption(f"{t['fecha']}")
                     if st.checkbox("Hecho", key=f"kb_done_{t['id']}"):
-                        tareas.loc[tareas["id"] == t["id"], "done"] = True
+                        mark_task_done(tareas, t["id"])
                         save_df("tareas", tareas)
                         st.rerun()
 

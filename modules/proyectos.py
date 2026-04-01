@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 from core.data import get_df, save_df, uid, now_ts
 from core.constants import AREAS, AREA_LABELS, PRIORITY_LABELS
-from core.utils import confirm_delete, export_csv, PRIORITY_EMOJIS, soft_delete, cascade_delete_project
+from core.utils import confirm_delete, export_csv, PRIORITY_EMOJIS, soft_delete, cascade_delete_project, mark_task_done
 
 
 def _parse_subtareas(subtareas_str):
@@ -458,7 +458,7 @@ def _move_task_status(task, target_status, tareas):
     """Move a task to a target kanban status by updating done/subtasks."""
     task_id = task["id"]
     if target_status == "completada":
-        tareas.loc[tareas["id"] == task_id, "done"] = True
+        mark_task_done(tareas, task_id)
     elif target_status == "pendiente":
         tareas.loc[tareas["id"] == task_id, "done"] = False
         # Reset all subtasks
@@ -516,7 +516,7 @@ def _render_tasks_list(proj_tasks, tareas):
             with bc1:
                 if st.button("✅ Completar", use_container_width=True, type="primary"):
                     for tid in selected:
-                        tareas.loc[tareas["id"] == tid, "done"] = True
+                        mark_task_done(tareas, tid)
                     save_df("tareas", tareas)
                     st.rerun()
             with bc2:

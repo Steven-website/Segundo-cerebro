@@ -16,6 +16,16 @@ def cr_now():
 TIPO_CAMBIO_DEFAULT = 510.0
 
 
+def mark_task_done(tareas, task_id, done=True):
+    """Mark a task as done/undone and record fecha_completada."""
+    tareas.loc[tareas["id"] == task_id, "done"] = done
+    if done:
+        tareas.loc[tareas["id"] == task_id, "fecha_completada"] = datetime.now().strftime("%Y-%m-%d")
+    else:
+        tareas.loc[tareas["id"] == task_id, "fecha_completada"] = ""
+    return tareas
+
+
 def get_tipo_cambio():
     """Get USD→CRC exchange rate. Caches for the session."""
     if "tipo_cambio" in st.session_state:

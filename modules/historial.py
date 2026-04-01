@@ -21,8 +21,11 @@ def render():
         st.info("No hay tareas completadas aun.")
         return
 
-    # Use fecha (due date) as reference, fallback to ts
+    # Use fecha_completada first, fallback to fecha, then ts
     def _get_done_date(row):
+        fc = row.get("fecha_completada", "")
+        if fc and str(fc) not in ("", "nan"):
+            return str(fc)
         if row.get("fecha"):
             return row["fecha"]
         try:

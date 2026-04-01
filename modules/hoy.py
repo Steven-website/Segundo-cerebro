@@ -4,7 +4,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from core.data import get_df, save_df
 from core.constants import AREA_LABELS, PRIORITY_LABELS
-from core.utils import PRIORITY_EMOJIS
+from core.utils import PRIORITY_EMOJIS, mark_task_done
 
 
 def _parse_subtareas(subtareas_str):
@@ -54,7 +54,7 @@ def _execute_undo(undo):
     tipo = undo.get("tipo")
     if tipo == "task_done":
         tareas = get_df("tareas")
-        tareas.loc[tareas["id"] == undo["id"], "done"] = False
+        mark_task_done(tareas, undo["id"], done=False)
         save_df("tareas", tareas)
     elif tipo == "subtask_done":
         tareas = get_df("tareas")
@@ -372,7 +372,7 @@ def _render_today_task(t, tareas, proyectos, overdue=False):
         with col_check:
             if st.checkbox("", value=False, key=f"today_tc_{t['id']}", label_visibility="collapsed"):
                 import time as _time
-                tareas.loc[tareas["id"] == t["id"], "done"] = True
+                mark_task_done(tareas, t["id"])
                 save_df("tareas", tareas)
                 st.session_state["undo_action"] = {"tipo": "task_done", "id": t["id"], "msg": f"Tarea completada: {t['titulo']}", "ts": _time.time()}
                 st.rerun()
@@ -558,7 +558,7 @@ def _render_planificador():
                     if st.button("✅", key=f"plan_done_{b['id']}", use_container_width=True, help="Completar"):
                         blocks.loc[blocks["id"] == b["id"], "completado"] = True
                         if b["tarea_id"] and not tareas.empty:
-                            tareas.loc[tareas["id"] == b["tarea_id"], "done"] = True
+                            mark_task_done(tareas, b["tarea_id"])
                             _save_df("tareas", tareas)
                         _save_df("plan_blocks", blocks)
                         st.rerun()
@@ -696,7 +696,7 @@ def _render_focus_mode():
     # Complete task button
     if st.button("✅ Completar tarea", use_container_width=True, type="primary"):
         import time as _time
-        tareas.loc[tareas["id"] == task_id, "done"] = True
+        mark_task_done(tareas, task_id)
         _save_df("tareas", tareas)
         st.session_state["undo_action"] = {"tipo": "task_done", "id": task_id, "msg": f"Tarea completada: {task['titulo']}", "ts": _time.time()}
         st.session_state["focus_timer_start"] = None
