@@ -143,6 +143,7 @@ def render():
     # ═══════════════════════════════
     DEBT_ORIGINS = ["Tarjeta de credito", "Prestamo personal", "Prestamo vehicular",
                     "Prestamo hipotecario", "Financiamiento", "Otro"]
+    MONEDAS = ["₡ CRC", "$ USD"]
 
     col_title2, col_add2 = st.columns([5, 1])
     with col_title2:
@@ -152,23 +153,15 @@ def render():
             st.session_state["debt_editing"] = True
             st.session_state["debt_edit_id"] = None
 
-    # --- Month/Year filter ---
-    now = datetime.now()
-    MONTH_NAMES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-                   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-    cm, cy = st.columns(2)
-    with cm:
-        debt_month = st.selectbox("Mes", range(1, 13), index=now.month - 1,
-                                  format_func=lambda m: MONTH_NAMES[m - 1],
-                                  key="debt_month", label_visibility="collapsed")
-    with cy:
-        debt_years = list(range(now.year + 1, now.year - 4, -1))
-        debt_year = st.selectbox("Año", debt_years, index=debt_years.index(now.year),
-                                 key="debt_year", label_visibility="collapsed")
+    monthly = get_df("debt_monthly")
+    tc = get_tipo_cambio()
 
-    sel_mes = f"{debt_year}-{debt_month:02d}"
+    def _fmt_money(val, moneda):
+        if moneda == "USD":
+            return f"${val:,.2f}"
+        return f"₡{val:,.0f}"
 
-    # --- Add/Edit form ---
+    # --- Add/Edit debt form ---
     if st.session_state.get("debt_editing"):
         edit_id = st.session_state.get("debt_edit_id")
         existing = None
@@ -177,7 +170,6 @@ def render():
             if not matches.empty:
                 existing = matches.iloc[0]
 
-        MONEDAS = ["₡ CRC", "$ USD"]
         with st.form("debt_form", clear_on_submit=True):
             st.subheader("Editar deuda" if existing is not None else "Nueva deuda")
             name = st.text_input("Nombre", value=existing["name"] if existing is not None else "")
@@ -186,34 +178,19 @@ def render():
             origen = co.selectbox("Origen", DEBT_ORIGINS, index=orig_idx)
             mon_idx = 1 if existing is not None and existing.get("moneda") == "USD" else 0
             moneda_sel = cm2.selectbox("Moneda", MONEDAS, index=mon_idx)
-            c1, c2 = st.columns(2)
-            monto_mes = c1.number_input("Deuda del mes", min_value=0.0, step=100.0,
-                                        value=float(existing["monto_mes"]) if existing is not None else 0.0)
-            pagado = c2.number_input("Pago realizado", min_value=0.0, step=100.0,
-                                     value=float(existing["pagado"]) if existing is not None else 0.0)
+            total_orig = st.number_input("Deuda total original", min_value=0.0, step=100.0,
+                                         value=float(existing["total_original"]) if existing is not None else 0.0)
 
             col_s, col_c = st.columns(2)
             submitted = col_s.form_submit_button("Guardar", type="primary")
             cancelled = col_c.form_submit_button("Cancelar")
 
-            if submitted and name.strip() and monto_mes > 0:
+            if submitted and name.strip() and total_orig > 0:
                 moneda = "USD" if "USD" in moneda_sel else "CRC"
                 new_row = {
                     "id": edit_id or uid(), "name": name.strip(), "origen": origen,
-                    "moneda": moneda, "monto_mes": monto_mes, "pagado": pagado,
-                    "mes": sel_mes, "ts": now_ts(),
+                    "moneda": moneda, "total_original": total_orig, "ts": now_ts(),
                 }
-                # Register payment as transaction in Finanzas (always in CRC)
-                if pagado > 0:
-                    old_pagado = float(existing["pagado"]) if existing is not None else 0.0
-                    diff_pago = pagado - old_pagado
-                    if diff_pago > 0:
-                        if moneda == "USD":
-                            tc = get_tipo_cambio()
-                            monto_crc = diff_pago * tc
-                            _register_tx("deudas", f"Deuda: {name.strip()} ({origen}) ${diff_pago:,.2f}", monto_crc)
-                        else:
-                            _register_tx("deudas", f"Deuda: {name.strip()} ({origen})", diff_pago)
                 if edit_id and not debts.empty:
                     debts = debts[debts["id"] != edit_id]
                 save_df("debts", pd.concat([pd.DataFrame([new_row]), debts], ignore_index=True))
@@ -225,64 +202,130 @@ def render():
                 st.session_state["debt_edit_id"] = None
                 st.rerun()
 
-    # --- Filter debts by selected month ---
-    month_debts = debts[debts["mes"] == sel_mes] if not debts.empty and "mes" in debts.columns else pd.DataFrame()
-
-    if month_debts.empty:
-        st.info(f"No hay deudas en {MONTH_NAMES[debt_month - 1]} {debt_year}.")
+    # --- List debts ---
+    if debts.empty:
+        st.info("No hay deudas registradas. Agrega una con + Deuda.")
     else:
-        # Ensure moneda column exists, default to CRC
-        if "moneda" not in month_debts.columns:
-            month_debts["moneda"] = "CRC"
-        month_debts["moneda"] = month_debts["moneda"].fillna("CRC").replace("", "CRC")
+        # Ensure columns
+        if "moneda" not in debts.columns:
+            debts["moneda"] = "CRC"
+        debts["moneda"] = debts["moneda"].fillna("CRC").replace("", "CRC")
+        if "total_original" not in debts.columns:
+            debts["total_original"] = 0.0
 
-        # Summary split by currency
-        tc = get_tipo_cambio()
-        for cur in ["CRC", "USD"]:
-            cur_debts = month_debts[month_debts["moneda"] == cur]
-            if cur_debts.empty:
-                continue
-            sym = "₡" if cur == "CRC" else "$"
-            fmt_c = lambda v, s=sym: f"{s}{v:,.0f}" if s == "₡" else f"{s}{v:,.2f}"
-            total_d = cur_debts["monto_mes"].sum()
-            total_p = cur_debts["pagado"].sum()
-            pend = total_d - total_p
-            mc1, mc2, mc3 = st.columns(3)
-            mc1.metric(f"Deuda {cur}", fmt_c(total_d))
-            mc2.metric("Pagado", fmt_c(total_p))
-            mc3.metric("Pendiente", fmt_c(pend),
-                        delta="Al dia" if pend <= 0 else "Pendiente",
-                        delta_color="normal" if pend <= 0 else "inverse")
-            if cur == "USD":
-                st.caption(f"Equivalente: ₡{total_d * tc:,.0f} deuda — ₡{total_p * tc:,.0f} pagado — ₡{pend * tc:,.0f} pendiente (TC: ₡{tc:,.0f})")
+        for _, debt in debts.iterrows():
+            mon = debt.get("moneda", "CRC") or "CRC"
+            debt_monthly = monthly[monthly["debt_id"] == debt["id"]].sort_values("mes") if not monthly.empty else pd.DataFrame()
+            total_pagado = float(debt_monthly["pago"].sum()) if not debt_monthly.empty else 0.0
+            ultimo_saldo = float(debt_monthly.iloc[-1]["saldo"]) if not debt_monthly.empty else float(debt["total_original"])
+            total_orig = float(debt["total_original"])
+            pct = min(total_pagado / total_orig, 1.0) if total_orig > 0 else 0
 
-        # Group by origen
-        origenes = month_debts["origen"].unique() if "origen" in month_debts.columns else []
-        for orig in sorted(origenes):
-            grupo = month_debts[month_debts["origen"] == orig]
-            st.markdown(f"**💳 {orig}**")
-            for _, d in grupo.iterrows():
-                mon = d.get("moneda", "CRC") or "CRC"
-                sym = "₡" if mon == "CRC" else "$"
-                fmt_d = lambda v, s=sym: f"{s}{v:,.0f}" if s == "₡" else f"{s}{v:,.2f}"
-                pend = d["monto_mes"] - d["pagado"]
-                status = "✅" if pend <= 0 else f":red[Pendiente {fmt_d(pend)}]"
-                crc_note = f" (₡{d['monto_mes'] * tc:,.0f})" if mon == "USD" else ""
-                col_info, col_act = st.columns([5, 1])
-                with col_info:
-                    st.markdown(f"{d['name']} — {fmt_d(d['monto_mes'])}{crc_note} — Pagado: {fmt_d(d['pagado'])} — {status}")
-                with col_act:
-                    ca, cb = st.columns(2)
-                    with ca:
-                        if st.button("✏️", key=f"debt_edit_{d['id']}"):
-                            st.session_state["debt_editing"] = True
-                            st.session_state["debt_edit_id"] = d["id"]
+            with st.container(border=True):
+                # Header
+                crc_equiv = f" (₡{total_orig * tc:,.0f})" if mon == "USD" else ""
+                st.markdown(f"**{debt['name']}** — {debt.get('origen', '')} — {_fmt_money(total_orig, mon)}{crc_equiv}")
+                st.progress(pct, text=f"Pagado: {_fmt_money(total_pagado, mon)} / {_fmt_money(total_orig, mon)} ({int(pct*100)}%)")
+
+                saldo_label = f"Saldo actual: {_fmt_money(ultimo_saldo, mon)}"
+                if mon == "USD":
+                    saldo_label += f" (₡{ultimo_saldo * tc:,.0f})"
+                st.caption(saldo_label)
+
+                # --- Monthly record form ---
+                with st.expander("📝 Registrar mes"):
+                    now = datetime.now()
+                    MONTH_NAMES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+                                   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+                    cm_d, cy_d = st.columns(2)
+                    with cm_d:
+                        rec_month = st.selectbox("Mes", range(1, 13), index=now.month - 1,
+                                                 format_func=lambda m: MONTH_NAMES[m - 1],
+                                                 key=f"dm_{debt['id']}", label_visibility="collapsed")
+                    with cy_d:
+                        rec_years = list(range(now.year + 1, now.year - 4, -1))
+                        rec_year = st.selectbox("Año", rec_years, index=rec_years.index(now.year),
+                                                key=f"dy_{debt['id']}", label_visibility="collapsed")
+                    rec_mes = f"{rec_year}-{rec_month:02d}"
+
+                    # Check existing record for this month
+                    existing_rec = None
+                    if not debt_monthly.empty:
+                        match = debt_monthly[debt_monthly["mes"] == rec_mes]
+                        if not match.empty:
+                            existing_rec = match.iloc[0]
+
+                    with st.form(f"dm_form_{debt['id']}", clear_on_submit=False):
+                        cs, cp = st.columns(2)
+                        saldo = cs.number_input("Saldo del mes", min_value=0.0, step=100.0,
+                                                value=float(existing_rec["saldo"]) if existing_rec is not None else float(ultimo_saldo))
+                        pago = cp.number_input("Pago realizado", min_value=0.0, step=100.0,
+                                               value=float(existing_rec["pago"]) if existing_rec is not None else 0.0)
+                        if st.form_submit_button("Guardar registro", type="primary"):
+                            new_rec = {
+                                "id": existing_rec["id"] if existing_rec is not None else uid(),
+                                "debt_id": debt["id"], "mes": rec_mes,
+                                "saldo": saldo, "pago": pago, "ts": now_ts(),
+                            }
+                            updated = monthly.copy()
+                            if existing_rec is not None:
+                                updated = updated[updated["id"] != existing_rec["id"]]
+                            # Register payment diff in Finanzas
+                            old_pago = float(existing_rec["pago"]) if existing_rec is not None else 0.0
+                            diff_pago = pago - old_pago
+                            if diff_pago > 0:
+                                if mon == "USD":
+                                    _register_tx("deudas", f"Deuda: {debt['name']} ({debt.get('origen', '')}) ${diff_pago:,.2f}", diff_pago * tc)
+                                else:
+                                    _register_tx("deudas", f"Deuda: {debt['name']} ({debt.get('origen', '')})", diff_pago)
+                            save_df("debt_monthly", pd.concat([pd.DataFrame([new_rec]), updated], ignore_index=True))
                             st.rerun()
-                    with cb:
-                        if confirm_delete(d["id"], d["name"], "debt"):
-                            debts = debts[debts["id"] != d["id"]]
-                            save_df("debts", debts)
-                            st.rerun()
+
+                # --- History chart ---
+                if not debt_monthly.empty and len(debt_monthly) > 0:
+                    with st.expander("📈 Historial"):
+                        chart_data = debt_monthly[["mes", "saldo", "pago"]].copy()
+                        chart_data.columns = ["Mes", "Saldo", "Pago"]
+                        chart_data = chart_data.set_index("Mes")
+
+                        st.caption("Saldo de deuda por mes")
+                        st.line_chart(chart_data[["Saldo"]], color=["#c96a6a"])
+                        st.caption("Pagos por mes")
+                        st.bar_chart(chart_data[["Pago"]], color=["#4a9e7a"])
+
+                        # Stats
+                        total_pagos = debt_monthly["pago"].sum()
+                        meses = len(debt_monthly)
+                        promedio = total_pagos / meses if meses > 0 else 0
+                        sc1, sc2, sc3 = st.columns(3)
+                        sc1.metric("Total pagado", _fmt_money(total_pagos, mon))
+                        sc2.metric("Meses registrados", meses)
+                        sc3.metric("Promedio/mes", _fmt_money(promedio, mon))
+
+                        if ultimo_saldo > 0 and promedio > 0:
+                            meses_restantes = int(ultimo_saldo / promedio) + 1
+                            st.caption(f"A este ritmo, te faltan ~{meses_restantes} meses para liquidar")
+
+                        # Table
+                        for _, r in debt_monthly.sort_values("mes", ascending=False).iterrows():
+                            st.markdown(f"**{r['mes']}** — Saldo: {_fmt_money(r['saldo'], mon)} — Pago: {_fmt_money(r['pago'], mon)}")
+
+                # --- Edit/Delete ---
+                ce, cd = st.columns(2)
+                with ce:
+                    if st.button("✏️ Editar", key=f"debt_edit_{debt['id']}", use_container_width=True):
+                        st.session_state["debt_editing"] = True
+                        st.session_state["debt_edit_id"] = debt["id"]
+                        st.rerun()
+                with cd:
+                    if confirm_delete(debt["id"], debt["name"], "debt"):
+                        debts = debts[debts["id"] != debt["id"]]
+                        # Also delete monthly records
+                        if not monthly.empty:
+                            monthly = monthly[monthly["debt_id"] != debt["id"]]
+                            save_df("debt_monthly", monthly)
+                        save_df("debts", debts)
+                        st.rerun()
 
 
 def _record_savings_contribution(saving_id, amount, new_balance):
