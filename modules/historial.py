@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
-from core.data import get_df
+from core.data import get_df, save_df
 from core.constants import fmt
 
 
@@ -121,6 +121,7 @@ def render():
                 proj_name = pm.iloc[0].get("emoji", "📁") + " " + pm.iloc[0]["nombre"]
 
         weeks[wk_key]["tasks"].append({
+            "id": t["id"],
             "titulo": t["titulo"],
             "fecha": t["done_date"],
             "proyecto": proj_name,
@@ -147,4 +148,17 @@ def render():
             for proj, tasks in by_proj.items():
                 st.markdown(f"**{proj}** ({len(tasks)})")
                 for task in tasks:
-                    st.markdown(f"- ✅ {task['titulo']} — `{task['fecha']}`")
+                    col_t, col_d = st.columns([5, 2])
+                    with col_t:
+                        st.markdown(f"- ✅ {task['titulo']} — `{task['fecha']}`")
+                    with col_d:
+                        new_date = st.date_input(
+                            "fecha", value=datetime.strptime(task["fecha"], "%Y-%m-%d").date(),
+                            key=f"hist_date_{task['id']}", label_visibility="collapsed",
+                        )
+                        new_date_str = new_date.strftime("%Y-%m-%d")
+                        if new_date_str != task["fecha"]:
+                            tareas = get_df("tareas")
+                            tareas.loc[tareas["id"] == task["id"], "fecha_completada"] = new_date_str
+                            save_df("tareas", tareas)
+                            st.rerun()
