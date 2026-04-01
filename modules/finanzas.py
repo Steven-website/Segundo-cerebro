@@ -96,7 +96,7 @@ def _inject_debt_payments(txs):
     # Ensure moneda column
     if "moneda" not in debts.columns:
         debts["moneda"] = "CRC"
-    debt_info = dict(zip(debts["id"], debts[["name", "origen", "moneda"]].to_dict("index")))
+    debt_info = {row["id"]: {"name": row["name"], "origen": row["origen"], "moneda": row["moneda"]} for _, row in debts.iterrows()}
 
     new_txs = []
     for _, r in debt_monthly.iterrows():
