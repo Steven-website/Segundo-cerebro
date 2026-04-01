@@ -122,11 +122,9 @@ if user:
     except Exception:
         pass
 
-col_title, col_user, col_logout = st.columns([5, 2, 1])
+col_title, col_logout = st.columns([7, 1])
 with col_title:
     st.markdown(f"### 🧠 Segundo Cerebro")
-with col_user:
-    st.caption(f"{avatar} {user}")
 with col_logout:
     if st.button("Salir", use_container_width=True):
         for key in list(st.session_state.keys()):

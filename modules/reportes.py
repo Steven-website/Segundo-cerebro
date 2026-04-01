@@ -235,14 +235,30 @@ def _render_balance():
 
     savings = get_df("savings")
     debts = get_df("debts")
+    debt_monthly = get_df("debt_monthly")
     txs = get_df("txs")
     inventario = get_df("inventario")
+
+    from core.utils import get_tipo_cambio
+    tc = get_tipo_cambio()
 
     # Totals
     total_savings = float(savings["current"].sum()) if not savings.empty else 0
     total_savings_goal = float(savings["goal"].sum()) if not savings.empty else 0
-    total_debt = float((debts["total"] - debts["paid"]).sum()) if not debts.empty else 0
-    total_debt_full = float(debts["total"].sum()) if not debts.empty else 0
+
+    # Calculate total debt from debt_monthly (latest saldo per debt)
+    total_debt = 0
+    if not debt_monthly.empty and not debts.empty:
+        for _, d in debts.iterrows():
+            dm = debt_monthly[debt_monthly["debt_id"] == d["id"]]
+            if not dm.empty:
+                latest = dm.sort_values("ts", ascending=False).iloc[0]
+                saldo = float(latest["saldo"])
+                mon = d.get("moneda", "CRC") or "CRC"
+                if mon == "USD":
+                    saldo = saldo * tc
+                total_debt += saldo
+
     total_inventory = float((inventario["val"] * inventario["qty"]).sum()) if not inventario.empty else 0
 
     now = datetime.now()
@@ -276,15 +292,16 @@ def _render_balance():
     with c2:
         st.markdown("### Deudas")
         st.metric("Deuda pendiente", fmt(total_debt))
-        st.metric("Deuda total", fmt(total_debt_full))
-        if total_debt_full > 0:
-            paid_pct = 1 - (total_debt / total_debt_full)
-            st.progress(min(paid_pct, 1.0), text=f"{int(paid_pct * 100)}% pagado")
 
         if not debts.empty:
             for _, d in debts.iterrows():
-                remaining = d["total"] - d["paid"]
-                st.caption(f"{d['name']}: pendiente {fmt(remaining)}")
+                dm = debt_monthly[debt_monthly["debt_id"] == d["id"]] if not debt_monthly.empty else pd.DataFrame()
+                if not dm.empty:
+                    latest = dm.sort_values("ts", ascending=False).iloc[0]
+                    saldo = float(latest["saldo"])
+                    mon = d.get("moneda", "CRC") or "CRC"
+                    label = f"${saldo:,.2f}" if mon == "USD" else fmt(saldo)
+                    st.caption(f"{d['name']}: {label}")
 
     with c3:
         st.markdown("### Este mes")
@@ -350,10 +367,19 @@ def _generate_text_report():
             lines.append(f"  {s['name']}: {fmt(s['current'])} / {fmt(s['goal'])}")
 
     debts = get_df("debts")
+    debt_monthly = get_df("debt_monthly")
     if not debts.empty:
         lines.append(f"\nDEUDAS:")
         for _, d in debts.iterrows():
-            lines.append(f"  {d['name']}: pendiente {fmt(d['total'] - d['paid'])}")
+            dm = debt_monthly[debt_monthly["debt_id"] == d["id"]] if not debt_monthly.empty else pd.DataFrame()
+            if not dm.empty:
+                latest = dm.sort_values("ts", ascending=False).iloc[0]
+                saldo = float(latest["saldo"])
+                mon = d.get("moneda", "CRC") or "CRC"
+                label = f"${saldo:,.2f}" if mon == "USD" else fmt(saldo)
+                lines.append(f"  {d['name']}: saldo {label}")
+            else:
+                lines.append(f"  {d['name']}: sin registros")
 
     tareas = get_df("tareas")
     if not tareas.empty:
