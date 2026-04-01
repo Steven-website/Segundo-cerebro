@@ -156,6 +156,32 @@ def render():
     monthly = get_df("debt_monthly")
     tc = get_tipo_cambio()
 
+    # --- Migrate old format debts (monto_mes/pagado/mes) to new format ---
+    if not debts.empty and "monto_mes" in debts.columns:
+        migrated_debts = []
+        migrated_monthly = []
+        for _, old in debts.iterrows():
+            debt_id = old["id"]
+            migrated_debts.append({
+                "id": debt_id, "name": old["name"],
+                "origen": old.get("origen", "Otro"),
+                "moneda": old.get("moneda", "CRC") or "CRC",
+                "total_original": float(old.get("monto_mes", 0)),
+                "ts": old["ts"],
+            })
+            if old.get("mes"):
+                migrated_monthly.append({
+                    "id": uid(), "debt_id": debt_id, "mes": old["mes"],
+                    "saldo": float(old.get("monto_mes", 0)) - float(old.get("pagado", 0)),
+                    "pago": float(old.get("pagado", 0)), "ts": old["ts"],
+                })
+        debts = pd.DataFrame(migrated_debts)
+        save_df("debts", debts)
+        if migrated_monthly:
+            new_monthly = pd.DataFrame(migrated_monthly)
+            monthly = pd.concat([new_monthly, monthly], ignore_index=True)
+            save_df("debt_monthly", monthly)
+
     def _fmt_money(val, moneda):
         if moneda == "USD":
             return f"${val:,.2f}"
