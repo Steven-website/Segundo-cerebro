@@ -161,41 +161,58 @@ def render():
 
     st.caption(f"Tipo de cambio: **1 USD = ₡{tc:,.0f}**")
 
+    # --- Migrate old "mes" column to "periodo" ---
+    if not monthly.empty and "mes" in monthly.columns and "periodo" not in monthly.columns:
+        monthly = monthly.rename(columns={"mes": "periodo"})
+        # Convert old "2026-04" to "2026-04-Q1"
+        monthly["periodo"] = monthly["periodo"].apply(lambda x: f"{x}-Q1" if len(str(x)) == 7 else x)
+        save_df("debt_monthly", monthly)
+
     # --- Total debt summary (all debts converted to CRC) ---
-    if not debts.empty and not monthly.empty:
+    if not debts.empty and not monthly.empty and "periodo" in monthly.columns:
         if "moneda" not in debts.columns:
             debts["moneda"] = "CRC"
         debts["moneda"] = debts["moneda"].fillna("CRC").replace("", "CRC")
 
-        # Build per-month totals across all debts (in CRC)
         debt_moneda = dict(zip(debts["id"], debts["moneda"]))
         m_copy = monthly.copy()
         m_copy["mon"] = m_copy["debt_id"].map(debt_moneda).fillna("CRC")
         m_copy["saldo_crc"] = m_copy.apply(lambda r: r["saldo"] * tc if r["mon"] == "USD" else r["saldo"], axis=1)
         m_copy["pago_crc"] = m_copy.apply(lambda r: r["pago"] * tc if r["mon"] == "USD" else r["pago"], axis=1)
 
-        by_month = m_copy.groupby("mes").agg({"saldo_crc": "sum", "pago_crc": "sum"}).sort_index()
+        by_period = m_copy.groupby("periodo").agg({"saldo_crc": "sum", "pago_crc": "sum"}).sort_index()
 
-        if not by_month.empty:
-            current_mes = f"{now.year}-{now.month:02d}"
-            if current_mes in by_month.index:
-                mes_saldo = by_month.loc[current_mes, "saldo_crc"]
-                mes_pago = by_month.loc[current_mes, "pago_crc"]
+        if not by_period.empty:
+            # Current month: use last registered quincena
+            current_prefix = f"{now.year}-{now.month:02d}"
+            current_periods = [p for p in by_period.index if p.startswith(current_prefix)]
+            if current_periods:
+                last_p = sorted(current_periods)[-1]
+                p_saldo = by_period.loc[last_p, "saldo_crc"]
+                # Sum all payments in current month (Q1 + Q2)
+                p_pago = sum(by_period.loc[p, "pago_crc"] for p in current_periods)
             else:
-                mes_saldo = 0.0
-                mes_pago = 0.0
+                p_saldo = 0.0
+                p_pago = 0.0
 
-            mc1, mc2 = st.columns(2)
-            mc1.metric(f"Deuda total ({MONTH_NAMES[now.month - 1]})", f"₡{mes_saldo:,.0f}")
-            mc2.metric(f"Pagado ({MONTH_NAMES[now.month - 1]})", f"₡{mes_pago:,.0f}")
+            total_pagado_all = m_copy["pago_crc"].sum()
+
+            mc1, mc2, mc3 = st.columns(3)
+            mc1.metric(f"Deuda ({MONTH_NAMES[now.month - 1]})", f"₡{p_saldo:,.0f}")
+            mc2.metric(f"Pagado ({MONTH_NAMES[now.month - 1]})", f"₡{p_pago:,.0f}")
+            mc3.metric("Total pagado", f"₡{total_pagado_all:,.0f}")
 
             with st.expander("📊 Tendencia deuda total"):
-                chart_df = by_month.copy()
+                chart_df = by_period.copy()
                 chart_df.columns = ["Deuda total ₡", "Pagos ₡"]
-                st.caption("Deuda total en colones por mes")
+                # Cumulative payments
+                chart_df["Pagos acumulados ₡"] = chart_df["Pagos ₡"].cumsum()
+                st.caption("Deuda total en colones por quincena")
                 st.line_chart(chart_df[["Deuda total ₡"]], color=["#c96a6a"])
-                st.caption("Pagos en colones por mes")
+                st.caption("Pagos por quincena")
                 st.bar_chart(chart_df[["Pagos ₡"]], color=["#4a9e7a"])
+                st.caption("Pagos acumulados")
+                st.line_chart(chart_df[["Pagos acumulados ₡"]], color=["#4a9e7a"])
 
     # --- Migrate old format ---
     if not debts.empty and "monto_mes" in debts.columns:
@@ -276,9 +293,11 @@ def render():
             debts["moneda"] = "CRC"
         debts["moneda"] = debts["moneda"].fillna("CRC").replace("", "CRC")
 
+        periodo_col = "periodo" if "periodo" in monthly.columns else "mes"
+
         for _, debt in debts.iterrows():
             mon = debt.get("moneda", "CRC") or "CRC"
-            d_monthly = monthly[monthly["debt_id"] == debt["id"]].sort_values("mes") if not monthly.empty else pd.DataFrame()
+            d_monthly = monthly[monthly["debt_id"] == debt["id"]].sort_values(periodo_col) if not monthly.empty else pd.DataFrame()
             total_pagado = float(d_monthly["pago"].sum()) if not d_monthly.empty else 0.0
             ultimo_saldo = float(d_monthly.iloc[-1]["saldo"]) if not d_monthly.empty else 0.0
 
@@ -289,9 +308,9 @@ def render():
                 else:
                     st.markdown(f"Saldo actual: **{_fm_both(ultimo_saldo, mon)}** — Total pagado: **{_fm_both(total_pagado, mon)}**")
 
-                # --- Register month ---
-                with st.expander("📝 Registrar mes"):
-                    cm_d, cy_d = st.columns(2)
+                # --- Register quincena ---
+                with st.expander("📝 Registrar quincena"):
+                    cm_d, cy_d, cq_d = st.columns([2, 1, 2])
                     with cm_d:
                         rec_month = st.selectbox("Mes", range(1, 13), index=now.month - 1,
                                                  format_func=lambda m: MONTH_NAMES[m - 1],
@@ -300,11 +319,16 @@ def render():
                         rec_years = list(range(now.year + 1, now.year - 4, -1))
                         rec_year = st.selectbox("Año", rec_years, index=rec_years.index(now.year),
                                                 key=f"dy_{debt['id']}", label_visibility="collapsed")
-                    rec_mes = f"{rec_year}-{rec_month:02d}"
+                    with cq_d:
+                        default_q = 0 if now.day <= 15 else 1
+                        quincena = st.selectbox("Quincena", ["Q1 (1-15)", "Q2 (16-fin)"],
+                                                index=default_q, key=f"dq_{debt['id']}")
+                    q_num = "Q1" if "Q1" in quincena else "Q2"
+                    rec_periodo = f"{rec_year}-{rec_month:02d}-{q_num}"
 
                     existing_rec = None
                     if not d_monthly.empty:
-                        match = d_monthly[d_monthly["mes"] == rec_mes]
+                        match = d_monthly[d_monthly[periodo_col] == rec_periodo]
                         if not match.empty:
                             existing_rec = match.iloc[0]
 
@@ -319,7 +343,7 @@ def render():
                         if st.form_submit_button("Guardar", type="primary"):
                             new_rec = {
                                 "id": existing_rec["id"] if existing_rec is not None else uid(),
-                                "debt_id": debt["id"], "mes": rec_mes,
+                                "debt_id": debt["id"], "periodo": rec_periodo,
                                 "saldo": saldo, "pago": pago, "ts": now_ts(),
                             }
                             updated = monthly.copy()
@@ -338,36 +362,36 @@ def render():
                 # --- History ---
                 if not d_monthly.empty:
                     with st.expander("📈 Historial"):
-                        chart_data = d_monthly[["mes", "saldo", "pago"]].copy()
-                        chart_data.columns = ["Mes", "Saldo", "Pago"]
+                        chart_data = d_monthly[[periodo_col, "saldo", "pago"]].copy()
+                        chart_data.columns = ["Periodo", "Saldo", "Pago"]
                         if mon == "USD":
                             chart_data["Saldo ₡"] = chart_data["Saldo"] * tc
                             chart_data["Pago ₡"] = chart_data["Pago"] * tc
 
-                        chart_data = chart_data.set_index("Mes")
+                        chart_data = chart_data.set_index("Periodo")
 
-                        st.caption("Saldo de deuda por mes")
+                        st.caption("Saldo de deuda por quincena")
                         st.line_chart(chart_data[["Saldo"]], color=["#c96a6a"])
                         if mon == "USD":
                             st.caption("Saldo en colones")
                             st.line_chart(chart_data[["Saldo ₡"]], color=["#c99a6a"])
-                        st.caption("Pagos por mes")
+                        st.caption("Pagos por quincena")
                         st.bar_chart(chart_data[["Pago"]], color=["#4a9e7a"])
 
                         total_pagos = d_monthly["pago"].sum()
-                        meses = len(d_monthly)
-                        promedio = total_pagos / meses if meses > 0 else 0
+                        periodos = len(d_monthly)
+                        promedio = total_pagos / periodos if periodos > 0 else 0
                         sc1, sc2, sc3 = st.columns(3)
                         sc1.metric("Total pagado", _fm(total_pagos, mon))
-                        sc2.metric("Meses", meses)
-                        sc3.metric("Promedio/mes", _fm(promedio, mon))
+                        sc2.metric("Quincenas", periodos)
+                        sc3.metric("Promedio/quinc.", _fm(promedio, mon))
 
                         if ultimo_saldo > 0 and promedio > 0:
-                            meses_restantes = int(ultimo_saldo / promedio) + 1
-                            st.caption(f"A este ritmo, ~{meses_restantes} meses para liquidar")
+                            quinc_restantes = int(ultimo_saldo / promedio) + 1
+                            st.caption(f"A este ritmo, ~{quinc_restantes} quincenas para liquidar")
 
-                        for _, r in d_monthly.sort_values("mes", ascending=False).iterrows():
-                            st.markdown(f"**{r['mes']}** — Saldo: {_fm_both(r['saldo'], mon)} — Pago: {_fm_both(r['pago'], mon)}")
+                        for _, r in d_monthly.sort_values(periodo_col, ascending=False).iterrows():
+                            st.markdown(f"**{r[periodo_col]}** — Saldo: {_fm_both(r['saldo'], mon)} — Pago: {_fm_both(r['pago'], mon)}")
 
                 # --- Edit/Delete ---
                 ce, cd = st.columns(2)
