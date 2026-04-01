@@ -191,8 +191,8 @@ def render():
             # Monthly income vs expenses (last 6 months)
             months_data = []
             for i in range(5, -1, -1):
-                m = now.month - i
-                y = now.year
+                m = sel_month - i
+                y = sel_year
                 if m <= 0:
                     m += 12
                     y -= 1
@@ -288,9 +288,6 @@ def render():
         q2_txs = _filter_by_period(month_txs, "quincena2", now)
         gasto_q1 = float(q1_txs[q1_txs["type"] == "gasto"]["amt"].sum()) if not q1_txs.empty else 0
         gasto_q2 = float(q2_txs[q2_txs["type"] == "gasto"]["amt"].sum()) if not q2_txs.empty else 0
-        today_day = now.day
-        gasto_quincenal = gasto_q1 if today_day <= 15 else gasto_q2
-
         st.markdown("**Totales mensuales**")
         m1, m2, m3 = st.columns(3)
         m1.metric("Presupuesto", fmt(total_pres_mensual))
@@ -298,12 +295,19 @@ def render():
         diff_m = total_pres_mensual - total_gasto_mensual
         m3.metric("Disponible", fmt(diff_m), delta="OK" if diff_m >= 0 else "Excedido", delta_color="normal" if diff_m >= 0 else "inverse")
 
-        st.markdown("**Totales quincenales** (quincena actual)")
-        q1, q2, q3 = st.columns(3)
-        q1.metric("Presupuesto", fmt(total_pres_quincenal))
-        q2.metric("Gastado", fmt(gasto_quincenal))
-        diff_q = total_pres_quincenal - gasto_quincenal
-        q3.metric("Disponible", fmt(diff_q), delta="OK" if diff_q >= 0 else "Excedido", delta_color="normal" if diff_q >= 0 else "inverse")
+        st.markdown("**Quincena 1 (1-15)**")
+        q1a, q1b, q1c = st.columns(3)
+        q1a.metric("Presupuesto", fmt(total_pres_quincenal))
+        q1b.metric("Gastado", fmt(gasto_q1))
+        diff_q1 = total_pres_quincenal - gasto_q1
+        q1c.metric("Disponible", fmt(diff_q1), delta="OK" if diff_q1 >= 0 else "Excedido", delta_color="normal" if diff_q1 >= 0 else "inverse")
+
+        st.markdown("**Quincena 2 (16-fin)**")
+        q2a, q2b, q2c = st.columns(3)
+        q2a.metric("Presupuesto", fmt(total_pres_quincenal))
+        q2b.metric("Gastado", fmt(gasto_q2))
+        diff_q2 = total_pres_quincenal - gasto_q2
+        q2c.metric("Disponible", fmt(diff_q2), delta="OK" if diff_q2 >= 0 else "Excedido", delta_color="normal" if diff_q2 >= 0 else "inverse")
 
         st.divider()
 
