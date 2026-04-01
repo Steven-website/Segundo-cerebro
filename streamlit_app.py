@@ -103,6 +103,7 @@ PAGES = [
     "🎤 Audios",
     "🍅 Pomodoro",
     "📊 Reportes",
+    "📋 Historial",
     "💾 Backup & Importar",
     "🗑️ Papelera",
     "👤 Perfil",
@@ -182,6 +183,8 @@ elif page == "🍅 Pomodoro":
     from modules.pomodoro import render
 elif page == "📊 Reportes":
     from modules.reportes import render
+elif page == "📋 Historial":
+    from modules.historial import render
 elif page == "💾 Backup & Importar":
     from modules.backup import render
 elif page == "🗑️ Papelera":
