@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from core.data import get_df, save_df, uid, now_ts
 from core.constants import fmt
 from core.utils import confirm_delete, export_csv
@@ -90,7 +90,6 @@ def render():
                     if remaining > 0:
                         payments = get_df("debt_payments")  # reuse for savings tracking
                         # Estimate based on average monthly deposit
-                        from datetime import datetime, timedelta
                         all_payments = payments[payments.get("debt_id", pd.Series(dtype=str)).str.startswith("sav_")] if not payments.empty else pd.DataFrame()
                         # Simple projection: if they save at current pace
                         if s["current"] > 0 and s.get("date"):
