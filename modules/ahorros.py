@@ -186,12 +186,10 @@ def render():
             origen = co.selectbox("Origen", DEBT_ORIGINS, index=orig_idx)
             mon_idx = 1 if existing is not None and existing.get("moneda") == "USD" else 0
             moneda_sel = cm2.selectbox("Moneda", MONEDAS, index=mon_idx)
-            moneda = "USD" if "USD" in moneda_sel else "CRC"
-            simbolo = "$" if moneda == "USD" else "₡"
             c1, c2 = st.columns(2)
-            monto_mes = c1.number_input(f"Deuda del mes ({simbolo})", min_value=0.0, step=100.0 if moneda == "USD" else 1000.0,
+            monto_mes = c1.number_input("Deuda del mes", min_value=0.0, step=100.0,
                                         value=float(existing["monto_mes"]) if existing is not None else 0.0)
-            pagado = c2.number_input(f"Pago realizado ({simbolo})", min_value=0.0, step=100.0 if moneda == "USD" else 1000.0,
+            pagado = c2.number_input("Pago realizado", min_value=0.0, step=100.0,
                                      value=float(existing["pagado"]) if existing is not None else 0.0)
 
             col_s, col_c = st.columns(2)
@@ -199,6 +197,7 @@ def render():
             cancelled = col_c.form_submit_button("Cancelar")
 
             if submitted and name.strip() and monto_mes > 0:
+                moneda = "USD" if "USD" in moneda_sel else "CRC"
                 new_row = {
                     "id": edit_id or uid(), "name": name.strip(), "origen": origen,
                     "moneda": moneda, "monto_mes": monto_mes, "pagado": pagado,
