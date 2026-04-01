@@ -1,6 +1,12 @@
 import streamlit as st
 import json
 import os
+os.environ["TZ"] = "America/Costa_Rica"
+try:
+    import time
+    time.tzset()
+except AttributeError:
+    pass  # Windows doesn't have tzset
 from core.styles import inject_css
 
 st.set_page_config(

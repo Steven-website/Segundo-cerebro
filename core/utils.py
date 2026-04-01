@@ -1,8 +1,16 @@
 import json
 import pandas as pd
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from core.constants import AREAS
+
+# Costa Rica timezone (UTC-6, no DST)
+CR_TZ = timezone(timedelta(hours=-6))
+
+
+def cr_now():
+    """Return current datetime in Costa Rica timezone."""
+    return datetime.now(CR_TZ).replace(tzinfo=None)
 
 
 _DAY_FREQ_MAP = {
@@ -13,7 +21,7 @@ _DAY_FREQ_MAP = {
 
 def habit_applies_today(habit, check_date=None):
     """Check if a habit applies on the given date (or today)."""
-    d = check_date or datetime.now()
+    d = check_date or cr_now()
     freq = habit.get("freq", "diario")
     dow = d.weekday()
     day = d.day
@@ -43,7 +51,7 @@ def parse_checks(data):
 
 
 def is_done_today(habit):
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_str = cr_now().strftime("%Y-%m-%d")
     checks = parse_checks(habit.get("checks", "{}"))
     reps = [r.strip() for r in habit.get("repeticiones", "").split(",") if r.strip()]
     val = checks.get(today_str, False)
