@@ -260,6 +260,47 @@ def render():
 
     st.divider()
 
+    # --- Presupuesto vs Realidad ---
+    with st.expander("📊 Presupuesto vs Realidad", expanded=False):
+        budget_factor = 0.5 if period != "mensual" else 1.0
+        total_presupuesto = 0
+        total_gastado = 0
+        rows = []
+        for cat, limit in budget.items():
+            if cat == "ingreso":
+                continue
+            icon = CAT_ICONS.get(cat, "\U0001f4e6")
+            adj_limit = limit * budget_factor
+            spent = float(period_txs[(period_txs["type"] == "gasto") & (period_txs["cat"] == cat)]["amt"].sum()) if not period_txs.empty else 0
+            diff = adj_limit - spent
+            total_presupuesto += adj_limit
+            total_gastado += spent
+            status = "✅" if diff >= 0 else "🔴"
+            rows.append({"cat": cat, "icon": icon, "limit": adj_limit, "spent": spent, "diff": diff, "status": status})
+
+        # Summary metrics
+        total_diff = total_presupuesto - total_gastado
+        s1, s2, s3 = st.columns(3)
+        s1.metric("Presupuesto", fmt(total_presupuesto))
+        s2.metric("Gastado", fmt(total_gastado))
+        color = "normal" if total_diff >= 0 else "inverse"
+        s3.metric("Disponible", fmt(total_diff), delta="Dentro del presupuesto" if total_diff >= 0 else "Excedido", delta_color=color)
+
+        # Detail per category
+        for r in rows:
+            col_cat, col_pres, col_real, col_diff = st.columns([3, 2, 2, 2])
+            with col_cat:
+                st.markdown(f"{r['icon']} **{r['cat'].capitalize()}**")
+            with col_pres:
+                st.caption(f"Pres: {fmt(r['limit'])}")
+            with col_real:
+                st.caption(f"Real: {fmt(r['spent'])}")
+            with col_diff:
+                if r['diff'] >= 0:
+                    st.caption(f"✅ {fmt(r['diff'])}")
+                else:
+                    st.caption(f"🔴 {fmt(abs(r['diff']))}")
+
     # --- Budget progress + Transactions ---
     col_budget, col_txs = st.columns(2)
 
