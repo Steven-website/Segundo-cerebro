@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from core.data import get_df, save_df, uid, now_ts
 from core.constants import fmt
-from core.utils import confirm_delete, export_csv
+from core.utils import confirm_delete, export_csv, get_tipo_cambio
 
 
 def _register_tx(cat, desc, amount):
@@ -204,13 +204,17 @@ def render():
                     "moneda": moneda, "monto_mes": monto_mes, "pagado": pagado,
                     "mes": sel_mes, "ts": now_ts(),
                 }
-                # Register payment as transaction in Finanzas
+                # Register payment as transaction in Finanzas (always in CRC)
                 if pagado > 0:
                     old_pagado = float(existing["pagado"]) if existing is not None else 0.0
                     diff_pago = pagado - old_pagado
                     if diff_pago > 0:
-                        sym = "$" if moneda == "USD" else "₡"
-                        _register_tx("deudas", f"Deuda: {name.strip()} ({origen}) {sym}", diff_pago)
+                        if moneda == "USD":
+                            tc = get_tipo_cambio()
+                            monto_crc = diff_pago * tc
+                            _register_tx("deudas", f"Deuda: {name.strip()} ({origen}) ${diff_pago:,.2f}", monto_crc)
+                        else:
+                            _register_tx("deudas", f"Deuda: {name.strip()} ({origen})", diff_pago)
                 if edit_id and not debts.empty:
                     debts = debts[debts["id"] != edit_id]
                 save_df("debts", pd.concat([pd.DataFrame([new_row]), debts], ignore_index=True))
@@ -228,9 +232,14 @@ def render():
     if month_debts.empty:
         st.info(f"No hay deudas en {MONTH_NAMES[debt_month - 1]} {debt_year}.")
     else:
+        # Ensure moneda column exists, default to CRC
+        if "moneda" not in month_debts.columns:
+            month_debts["moneda"] = "CRC"
+        month_debts["moneda"] = month_debts["moneda"].fillna("CRC").replace("", "CRC")
+
         # Summary split by currency
         for cur in ["CRC", "USD"]:
-            cur_debts = month_debts[month_debts.get("moneda", "CRC") == cur] if "moneda" in month_debts.columns else (month_debts if cur == "CRC" else pd.DataFrame())
+            cur_debts = month_debts[month_debts["moneda"] == cur]
             if cur_debts.empty:
                 continue
             sym = "₡" if cur == "CRC" else "$"
@@ -251,7 +260,7 @@ def render():
             grupo = month_debts[month_debts["origen"] == orig]
             st.markdown(f"**💳 {orig}**")
             for _, d in grupo.iterrows():
-                mon = d.get("moneda", "CRC")
+                mon = d.get("moneda", "CRC") or "CRC"
                 sym = "₡" if mon == "CRC" else "$"
                 fmt_d = lambda v, s=sym: f"{s}{v:,.0f}" if s == "₡" else f"{s}{v:,.2f}"
                 pend = d["monto_mes"] - d["pagado"]

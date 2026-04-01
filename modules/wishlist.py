@@ -2,29 +2,7 @@ import streamlit as st
 import pandas as pd
 from core.data import get_df, save_df, uid, now_ts
 from core.constants import fmt
-from core.utils import confirm_delete
-
-
-# --- Exchange rate ---
-TIPO_CAMBIO_DEFAULT = 510.0  # fallback CRC per USD
-
-
-def _get_tipo_cambio():
-    """Get USD→CRC exchange rate. Caches for the session."""
-    if "tipo_cambio" in st.session_state:
-        return st.session_state["tipo_cambio"]
-    try:
-        import urllib.request
-        import json
-        url = "https://api.exchangerate-api.com/v4/latest/USD"
-        with urllib.request.urlopen(url, timeout=5) as resp:
-            data = json.loads(resp.read())
-            rate = float(data["rates"].get("CRC", TIPO_CAMBIO_DEFAULT))
-            st.session_state["tipo_cambio"] = rate
-            return rate
-    except Exception:
-        st.session_state["tipo_cambio"] = TIPO_CAMBIO_DEFAULT
-        return TIPO_CAMBIO_DEFAULT
+from core.utils import confirm_delete, get_tipo_cambio
 
 
 def _fmt_usd(val):
@@ -36,7 +14,7 @@ def render():
 
     cats = get_df("wishlist_cats")
     items = get_df("wishlist")
-    tc = _get_tipo_cambio()
+    tc = get_tipo_cambio()
 
     st.caption(f"Tipo de cambio: **1 USD = ₡{tc:,.0f}**")
 

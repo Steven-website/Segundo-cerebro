@@ -13,6 +13,27 @@ def cr_now():
     return datetime.now(CR_TZ).replace(tzinfo=None)
 
 
+TIPO_CAMBIO_DEFAULT = 510.0
+
+
+def get_tipo_cambio():
+    """Get USD→CRC exchange rate. Caches for the session."""
+    if "tipo_cambio" in st.session_state:
+        return st.session_state["tipo_cambio"]
+    try:
+        import urllib.request
+        import json as _json
+        url = "https://api.exchangerate-api.com/v4/latest/USD"
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            data = _json.loads(resp.read())
+            rate = float(data["rates"].get("CRC", TIPO_CAMBIO_DEFAULT))
+            st.session_state["tipo_cambio"] = rate
+            return rate
+    except Exception:
+        st.session_state["tipo_cambio"] = TIPO_CAMBIO_DEFAULT
+        return TIPO_CAMBIO_DEFAULT
+
+
 _DAY_FREQ_MAP = {
     "lunes": 0, "martes": 1, "miercoles": 2, "jueves": 3,
     "viernes": 4, "sabado": 5, "domingo": 6,
