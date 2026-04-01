@@ -341,7 +341,7 @@ def render():
                     with st.form(f"dm_form_{debt['id']}", clear_on_submit=False):
                         cs, cp = st.columns(2)
                         saldo = cs.number_input("Deuda hasta el momento", min_value=0.0, step=100.0,
-                                                value=float(existing_rec["saldo"]) if existing_rec is not None else float(ultimo_saldo))
+                                                value=float(existing_rec["saldo"]) if existing_rec is not None else 0.0)
                         pago = cp.number_input("Pago realizado", min_value=0.0, step=100.0,
                                                value=float(existing_rec["pago"]) if existing_rec is not None else 0.0)
                         if mon == "USD" and (saldo > 0 or pago > 0):
