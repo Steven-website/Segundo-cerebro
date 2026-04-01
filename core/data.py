@@ -13,7 +13,7 @@ SCHEMAS = {
     "proyectos": {"id": str, "nombre": str, "area": str, "emoji": str, "desc": str, "estado": str, "fecha_inicio": str, "fecha_fin": str, "plantilla": bool, "compartido": str, "ts": float},
     "txs": {"id": str, "type": str, "desc": str, "amt": float, "cat": str, "fecha": str, "ts": float},
     "savings": {"id": str, "name": str, "goal": float, "current": float, "date": str, "ts": float},
-    "debts": {"id": str, "name": str, "total": float, "paid": float, "rate": float, "due": str, "ts": float},
+    "debts": {"id": str, "name": str, "origen": str, "monto_mes": float, "pagado": float, "mes": str, "ts": float},
     "habitos": {"id": str, "name": str, "emoji": str, "cat": str, "freq": str, "checks": str, "streak": int, "repeticiones": str, "ts": float},
     "inventario": {"id": str, "name": str, "cat": str, "emoji": str, "val": float, "qty": int, "loc": str, "date": str, "garantia": str, "notes": str, "status": str, "ts": float},
     "audios": {"id": str, "titulo": str, "fecha": str, "comentario": str, "formato": str, "tamano": int, "transcript": str, "resumen": str, "puntos_clave": str, "pendientes": str, "ts": float},

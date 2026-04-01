@@ -142,16 +142,34 @@ def render():
     # ═══════════════════════════════
     #  DEBTS
     # ═══════════════════════════════
-    col_title2, col_exp2, col_add2 = st.columns([4, 1, 1])
+    DEBT_ORIGINS = ["Tarjeta de credito", "Prestamo personal", "Prestamo vehicular",
+                    "Prestamo hipotecario", "Financiamiento", "Otro"]
+
+    col_title2, col_add2 = st.columns([5, 1])
     with col_title2:
         st.subheader("Deudas")
-    with col_exp2:
-        export_csv(debts, "deudas.csv", "CSV")
     with col_add2:
         if st.button("+ Deuda", key="add_debt", use_container_width=True, type="primary"):
             st.session_state["debt_editing"] = True
             st.session_state["debt_edit_id"] = None
 
+    # --- Month/Year filter ---
+    now = datetime.now()
+    MONTH_NAMES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+                   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+    cm, cy = st.columns(2)
+    with cm:
+        debt_month = st.selectbox("Mes", range(1, 13), index=now.month - 1,
+                                  format_func=lambda m: MONTH_NAMES[m - 1],
+                                  key="debt_month", label_visibility="collapsed")
+    with cy:
+        debt_years = list(range(now.year + 1, now.year - 4, -1))
+        debt_year = st.selectbox("Año", debt_years, index=debt_years.index(now.year),
+                                 key="debt_year", label_visibility="collapsed")
+
+    sel_mes = f"{debt_year}-{debt_month:02d}"
+
+    # --- Add/Edit form ---
     if st.session_state.get("debt_editing"):
         edit_id = st.session_state.get("debt_edit_id")
         existing = None
@@ -163,21 +181,29 @@ def render():
         with st.form("debt_form", clear_on_submit=True):
             st.subheader("Editar deuda" if existing is not None else "Nueva deuda")
             name = st.text_input("Nombre", value=existing["name"] if existing is not None else "")
-            c1, c2, c3 = st.columns(3)
-            total = c1.number_input("Total (₡)", min_value=0.0, step=10000.0, value=float(existing["total"]) if existing is not None else 0.0)
-            paid = c2.number_input("Pagado", min_value=0.0, step=1000.0, value=float(existing["paid"]) if existing is not None else 0.0)
-            rate = c3.number_input("Tasa interes (%)", min_value=0.0, step=0.5, value=float(existing["rate"]) if existing is not None else 0.0)
-            due = st.date_input("Fecha vencimiento (opcional)", value=None)
+            orig_idx = DEBT_ORIGINS.index(existing["origen"]) if existing is not None and existing.get("origen") in DEBT_ORIGINS else 0
+            origen = st.selectbox("Origen", DEBT_ORIGINS, index=orig_idx)
+            c1, c2 = st.columns(2)
+            monto_mes = c1.number_input("Deuda del mes (₡)", min_value=0.0, step=1000.0,
+                                        value=float(existing["monto_mes"]) if existing is not None else 0.0)
+            pagado = c2.number_input("Pago realizado (₡)", min_value=0.0, step=1000.0,
+                                     value=float(existing["pagado"]) if existing is not None else 0.0)
 
             col_s, col_c = st.columns(2)
             submitted = col_s.form_submit_button("Guardar", type="primary")
             cancelled = col_c.form_submit_button("Cancelar")
 
-            if submitted and name.strip() and total > 0:
+            if submitted and name.strip() and monto_mes > 0:
                 new_row = {
-                    "id": edit_id or uid(), "name": name.strip(), "total": total,
-                    "paid": paid, "rate": rate, "due": str(due) if due else "", "ts": now_ts(),
+                    "id": edit_id or uid(), "name": name.strip(), "origen": origen,
+                    "monto_mes": monto_mes, "pagado": pagado, "mes": sel_mes, "ts": now_ts(),
                 }
+                # Register payment as transaction in Finanzas
+                if pagado > 0:
+                    old_pagado = float(existing["pagado"]) if existing is not None else 0.0
+                    diff_pago = pagado - old_pagado
+                    if diff_pago > 0:
+                        _register_tx("deudas", f"Deuda: {name.strip()} ({origen})", diff_pago)
                 if edit_id and not debts.empty:
                     debts = debts[debts["id"] != edit_id]
                 save_df("debts", pd.concat([pd.DataFrame([new_row]), debts], ignore_index=True))
@@ -189,93 +215,46 @@ def render():
                 st.session_state["debt_edit_id"] = None
                 st.rerun()
 
-    if debts.empty:
-        st.info("No hay deudas registradas.")
+    # --- Filter debts by selected month ---
+    month_debts = debts[debts["mes"] == sel_mes] if not debts.empty and "mes" in debts.columns else pd.DataFrame()
+
+    if month_debts.empty:
+        st.info(f"No hay deudas en {MONTH_NAMES[debt_month - 1]} {debt_year}.")
     else:
-        for _, d in debts.iterrows():
-            remaining = d["total"] - d["paid"]
-            pct = min(d["paid"] / d["total"], 1.0) if d["total"] > 0 else 0
-            with st.container(border=True):
-                c1, c2 = st.columns([4, 1])
-                with c1:
-                    st.markdown(f"**{d['name']}**")
-                    st.progress(pct, text=f"Pagado: {fmt(d['paid'])} / {fmt(d['total'])} ({int(pct*100)}%)")
-                    details = f"Pendiente: :red[{fmt(remaining)}]"
-                    if d.get("rate", 0) > 0:
-                        details += f" | Tasa: {d['rate']}%"
-                    if d.get("due"):
-                        details += f" | Vence: {d['due']}"
-                    st.markdown(details)
-                with c2:
-                    amount = st.number_input("Pagar", min_value=0.0, step=1000.0, key=f"debt_amt_{d['id']}", label_visibility="collapsed")
-                    if st.button("Pagar", key=f"debt_pay_{d['id']}", use_container_width=True):
-                        if amount > 0:
-                            new_paid = min(d["paid"] + amount, d["total"])
-                            debts.loc[debts["id"] == d["id"], "paid"] = new_paid
-                            save_df("debts", debts)
-                            _record_payment(d["id"], amount, d["name"])
-                            _register_tx("deudas", f"Pago deuda: {d['name']}", amount)
+        # Summary
+        total_deuda = month_debts["monto_mes"].sum()
+        total_pagado = month_debts["pagado"].sum()
+        pendiente = total_deuda - total_pagado
+        mc1, mc2, mc3 = st.columns(3)
+        mc1.metric("Deuda total", fmt(total_deuda))
+        mc2.metric("Pagado", fmt(total_pagado))
+        mc3.metric("Pendiente", fmt(pendiente),
+                    delta="Al dia" if pendiente <= 0 else "Pendiente",
+                    delta_color="normal" if pendiente <= 0 else "inverse")
+
+        # Group by origen
+        origenes = month_debts["origen"].unique() if "origen" in month_debts.columns else []
+        for orig in sorted(origenes):
+            grupo = month_debts[month_debts["origen"] == orig]
+            st.markdown(f"**💳 {orig}**")
+            for _, d in grupo.iterrows():
+                pend = d["monto_mes"] - d["pagado"]
+                status = "✅" if pend <= 0 else f":red[Pendiente {fmt(pend)}]"
+                col_info, col_act = st.columns([5, 1])
+                with col_info:
+                    st.markdown(f"{d['name']} — Deuda: {fmt(d['monto_mes'])} — Pagado: {fmt(d['pagado'])} — {status}")
+                with col_act:
+                    ca, cb = st.columns(2)
+                    with ca:
+                        if st.button("✏️", key=f"debt_edit_{d['id']}"):
+                            st.session_state["debt_editing"] = True
+                            st.session_state["debt_edit_id"] = d["id"]
                             st.rerun()
-                    if st.button("📋 Historial", key=f"debt_hist_{d['id']}", use_container_width=True):
-                        st.session_state["debt_history_id"] = d["id"]
-                        st.rerun()
-                    if st.button("✏️", key=f"debt_edit_{d['id']}", use_container_width=True):
-                        st.session_state["debt_editing"] = True
-                        st.session_state["debt_edit_id"] = d["id"]
-                        st.rerun()
-                    if confirm_delete(d["id"], d["name"], "debt"):
-                        debts = debts[debts["id"] != d["id"]]
-                        save_df("debts", debts)
-                        st.rerun()
-
-    # --- Payment history panel ---
-    hist_id = st.session_state.get("debt_history_id")
-    if hist_id:
-        _render_payment_history(hist_id, debts)
-
-
-def _record_payment(debt_id, amount, debt_name):
-    """Record a payment in the debt_payments history."""
-    payments = get_df("debt_payments")
-    new_payment = {
-        "id": uid(),
-        "debt_id": debt_id,
-        "monto": amount,
-        "fecha": datetime.now().strftime("%Y-%m-%d"),
-        "nota": f"Abono a {debt_name}",
-        "ts": now_ts(),
-    }
-    payments = pd.concat([pd.DataFrame([new_payment]), payments], ignore_index=True)
-    save_df("debt_payments", payments)
-
-
-def _render_payment_history(debt_id, debts):
-    """Show payment history for a specific debt."""
-    debt_match = debts[debts["id"] == debt_id]
-    if debt_match.empty:
-        return
-
-    debt = debt_match.iloc[0]
-    payments = get_df("debt_payments")
-    debt_payments = payments[payments["debt_id"] == debt_id].sort_values("ts", ascending=False) if not payments.empty else pd.DataFrame()
-
-    st.divider()
-    col_t, col_close = st.columns([5, 1])
-    with col_t:
-        st.subheader(f"Historial de pagos: {debt['name']}")
-    with col_close:
-        if st.button("Cerrar", key="close_hist"):
-            st.session_state["debt_history_id"] = None
-            st.rerun()
-
-    if debt_payments.empty:
-        st.info("No hay pagos registrados para esta deuda.")
-    else:
-        total_paid_hist = debt_payments["monto"].sum()
-        st.metric("Total abonado (historial)", fmt(total_paid_hist))
-
-        for _, p in debt_payments.iterrows():
-            st.markdown(f"- **{p['fecha']}** - {fmt(p['monto'])} - {p.get('nota', '')}")
+                    with cb:
+                        if confirm_delete(d["id"], d["name"], "debt"):
+                            debts = debts[debts["id"] != d["id"]]
+                            save_df("debts", debts)
+                            st.rerun()
 
 
 def _record_savings_contribution(saving_id, amount, new_balance):
