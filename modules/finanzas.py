@@ -315,12 +315,9 @@ def render():
                 else:
                     st.caption(f"🔴 {fmt(abs(diff))}")
 
-    # --- Budget progress + Transactions ---
-    col_budget, col_txs = st.columns(2)
-
-    with col_budget:
-        budget_label = "Presupuesto quincenal" if period != "mensual" else "Presupuesto mensual"
-        st.subheader(budget_label)
+    # --- Budget progress (collapsible) ---
+    budget_label = "📊 Presupuesto quincenal" if period != "mensual" else "📊 Presupuesto mensual"
+    with st.expander(budget_label):
         budget_factor = 0.5 if period != "mensual" else 1.0
         for cat, limit in budget.items():
             if cat == "ingreso":
@@ -328,25 +325,29 @@ def render():
             icon = CAT_ICONS.get(cat, "\U0001f4e6")
             adj_limit = limit * budget_factor
             spent = float(period_txs[(period_txs["type"] == "gasto") & (period_txs["cat"] == cat)]["amt"].sum()) if not period_txs.empty else 0
+            if adj_limit == 0 and spent == 0:
+                continue
             pct = min(spent / adj_limit, 1.0) if adj_limit > 0 else 0
 
-            st.markdown(f"{icon} **{cat.capitalize()}** \u2022 {fmt(spent)} / {fmt(adj_limit)}")
+            st.markdown(f"{icon} **{cat.capitalize()}** • {fmt(spent)} / {fmt(adj_limit)}")
             st.progress(pct)
 
-        with st.expander("Editar presupuesto"):
-            with st.form("budget_form"):
-                new_budget = {}
-                for cat, val in budget.items():
-                    if cat == "ingreso":
-                        continue
-                    icon = CAT_ICONS.get(cat, "")
-                    new_budget[cat] = st.number_input(f"{icon} {cat.capitalize()}", value=float(val), step=10000.0, key=f"bud_{cat}")
-                if st.form_submit_button("Guardar presupuesto"):
-                    budget_rows = [{"cat": k, "amt": v} for k, v in new_budget.items()]
-                    save_df("budget", pd.DataFrame(budget_rows))
-                    st.rerun()
+        st.divider()
+        st.markdown("**✏️ Editar presupuesto**")
+        with st.form("budget_form"):
+            new_budget = {}
+            for cat, val in budget.items():
+                if cat == "ingreso":
+                    continue
+                icon = CAT_ICONS.get(cat, "")
+                new_budget[cat] = st.number_input(f"{icon} {cat.capitalize()}", value=float(val), step=10000.0, key=f"bud_{cat}")
+            if st.form_submit_button("Guardar presupuesto"):
+                budget_rows = [{"cat": k, "amt": v} for k, v in new_budget.items()]
+                save_df("budget", pd.DataFrame(budget_rows))
+                st.rerun()
 
-    with col_txs:
+    # --- Transactions ---
+    with st.expander("💳 Transacciones del periodo"):
         st.subheader("Transacciones del periodo")
         if period_txs.empty:
             st.info("Sin transacciones en este periodo.")
