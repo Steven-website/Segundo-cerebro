@@ -13,7 +13,7 @@ SCHEMAS = {
     "proyectos": {"id": str, "nombre": str, "area": str, "emoji": str, "desc": str, "estado": str, "fecha_inicio": str, "fecha_fin": str, "plantilla": bool, "compartido": str, "ts": float},
     "txs": {"id": str, "type": str, "desc": str, "amt": float, "cat": str, "fecha": str, "ts": float},
     "savings": {"id": str, "name": str, "goal": float, "current": float, "date": str, "ts": float},
-    "debts": {"id": str, "name": str, "origen": str, "moneda": str, "total_original": float, "ts": float},
+    "debts": {"id": str, "name": str, "origen": str, "moneda": str, "ts": float},
     "debt_monthly": {"id": str, "debt_id": str, "mes": str, "saldo": float, "pago": float, "ts": float},
     "habitos": {"id": str, "name": str, "emoji": str, "cat": str, "freq": str, "checks": str, "streak": int, "repeticiones": str, "ts": float},
     "inventario": {"id": str, "name": str, "cat": str, "emoji": str, "val": float, "qty": int, "loc": str, "date": str, "garantia": str, "notes": str, "status": str, "ts": float},
