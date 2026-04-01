@@ -328,12 +328,14 @@ def render():
             icon = CAT_ICONS.get(cat, "\U0001f4e6")
             adj_limit = limit * budget_factor
             spent = float(period_txs[(period_txs["type"] == "gasto") & (period_txs["cat"] == cat)]["amt"].sum()) if not period_txs.empty else 0
+            if adj_limit == 0 and spent == 0:
+                continue
             pct = min(spent / adj_limit, 1.0) if adj_limit > 0 else 0
 
             st.markdown(f"{icon} **{cat.capitalize()}** \u2022 {fmt(spent)} / {fmt(adj_limit)}")
             st.progress(pct)
 
-        with st.expander("Editar presupuesto"):
+        with st.expander("✏️ Editar presupuesto"):
             with st.form("budget_form"):
                 new_budget = {}
                 for cat, val in budget.items():
