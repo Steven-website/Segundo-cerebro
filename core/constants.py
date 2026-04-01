@@ -23,11 +23,14 @@ CAT_ICONS = {
     "gym": "\U0001f4aa",
     "gasolina": "\u26fd",
     "internet": "\U0001f310",
+    "amazon": "\U0001f6d2",
+    "ahorro": "\U0001f3e6",
+    "deudas": "\U0001f4b3",
     "ingreso": "\U0001f4b0",
     "otro": "\U0001f4e6",
 }
 
-TX_CATS_GASTO = ["alimentacion", "transporte", "salud", "entretenimiento", "hogar", "ropa", "educacion", "trabajo", "luz", "celular", "gym", "gasolina", "internet", "otro"]
+TX_CATS_GASTO = ["alimentacion", "transporte", "salud", "entretenimiento", "hogar", "ropa", "educacion", "trabajo", "luz", "celular", "gym", "gasolina", "internet", "amazon", "ahorro", "deudas", "otro"]
 TX_CATS_INGRESO = ["ingreso", "trabajo", "otro"]
 
 BUDGET_DEFAULT = {
@@ -44,6 +47,9 @@ BUDGET_DEFAULT = {
     "gym": 25000,
     "gasolina": 40000,
     "internet": 20000,
+    "amazon": 0,
+    "ahorro": 0,
+    "deudas": 0,
     "otro": 50000,
 }
 
