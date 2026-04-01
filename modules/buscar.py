@@ -119,7 +119,7 @@ def _render_search_actions(result, index):
                     st.rerun()
         with c2:
             if st.button("📂", key=f"sr_open_{index}", help="Abrir en proyecto", use_container_width=True):
-                st.session_state["nav_page"] = "◈ Proyectos"
+                st.session_state["nav_pills"] = "◈ Proyectos"
                 if result.get("proyecto"):
                     st.session_state["proj_viewing"] = result["proyecto"]
                 st.session_state["task_detail_id"] = r_id
@@ -127,7 +127,7 @@ def _render_search_actions(result, index):
 
     elif r_type == "Proyecto" and r_id:
         if st.button("📂 Abrir", key=f"sr_proj_{index}", use_container_width=True):
-            st.session_state["nav_page"] = "◈ Proyectos"
+            st.session_state["nav_pills"] = "◈ Proyectos"
             st.session_state["proj_viewing"] = r_id
             st.rerun()
 
@@ -144,5 +144,5 @@ def _render_search_actions(result, index):
         target = page_map.get(r_type)
         if target:
             if st.button("Ir", key=f"sr_go_{index}", use_container_width=True):
-                st.session_state["nav_page"] = target
+                st.session_state["nav_pills"] = target
                 st.rerun()
