@@ -185,6 +185,45 @@ def _render_pendientes():
                 r2.metric("Proximos 15 dias", len(quin_tasks))
                 r3.metric("Este mes", len(month_tasks))
 
+                st.divider()
+                st.markdown("**Vista por semana**")
+
+                # Group pending tasks by week
+                from datetime import date as _date
+                weeks = {}
+                for _, t in pending_all.sort_values("fecha").iterrows():
+                    try:
+                        d = datetime.strptime(t["fecha"], "%Y-%m-%d")
+                    except (ValueError, TypeError):
+                        continue
+                    # Monday of that week
+                    monday = d - timedelta(days=d.weekday())
+                    sunday = monday + timedelta(days=6)
+                    week_key = monday.strftime("%Y-%m-%d")
+                    if week_key not in weeks:
+                        weeks[week_key] = {"start": monday, "end": sunday, "tasks": []}
+                    # Get project name
+                    proj_name = ""
+                    if t.get("proyecto") and not proyectos.empty:
+                        pm = proyectos[proyectos["id"] == t["proyecto"]]
+                        if not pm.empty:
+                            proj_name = pm.iloc[0].get("emoji", "📁") + " " + pm.iloc[0]["nombre"]
+                    weeks[week_key]["tasks"].append({"titulo": t["titulo"], "fecha": t["fecha"], "proyecto": proj_name, "prioridad": t.get("prioridad", "media")})
+
+                pri_icons = {"alta": "🔴", "media": "🟡", "baja": "🟢"}
+                for wk_key in sorted(weeks.keys()):
+                    wk = weeks[wk_key]
+                    start_label = wk["start"].strftime("%d/%m")
+                    end_label = wk["end"].strftime("%d/%m")
+                    is_current = wk["start"].date() <= now_dt.date() <= wk["end"].date()
+                    label = f"📌 Semana {start_label} - {end_label}" if is_current else f"Semana {start_label} - {end_label}"
+                    st.markdown(f"**{label}** ({len(wk['tasks'])} tareas)")
+                    for task in wk["tasks"]:
+                        pri = pri_icons.get(task["prioridad"], "🟡")
+                        proj = f" `{task['proyecto']}`" if task["proyecto"] else ""
+                        st.caption(f"{pri} {task['titulo']}{proj} — {task['fecha']}")
+                    st.markdown("---")
+
     st.divider()
 
     # ═══ HABITS SECTION ═══
