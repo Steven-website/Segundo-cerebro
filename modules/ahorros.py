@@ -237,6 +237,7 @@ def render():
         month_debts["moneda"] = month_debts["moneda"].fillna("CRC").replace("", "CRC")
 
         # Summary split by currency
+        tc = get_tipo_cambio()
         for cur in ["CRC", "USD"]:
             cur_debts = month_debts[month_debts["moneda"] == cur]
             if cur_debts.empty:
@@ -252,6 +253,8 @@ def render():
             mc3.metric("Pendiente", fmt_c(pend),
                         delta="Al dia" if pend <= 0 else "Pendiente",
                         delta_color="normal" if pend <= 0 else "inverse")
+            if cur == "USD":
+                st.caption(f"Equivalente: ₡{total_d * tc:,.0f} deuda — ₡{total_p * tc:,.0f} pagado — ₡{pend * tc:,.0f} pendiente (TC: ₡{tc:,.0f})")
 
         # Group by origen
         origenes = month_debts["origen"].unique() if "origen" in month_debts.columns else []
@@ -264,9 +267,10 @@ def render():
                 fmt_d = lambda v, s=sym: f"{s}{v:,.0f}" if s == "₡" else f"{s}{v:,.2f}"
                 pend = d["monto_mes"] - d["pagado"]
                 status = "✅" if pend <= 0 else f":red[Pendiente {fmt_d(pend)}]"
+                crc_note = f" (₡{d['monto_mes'] * tc:,.0f})" if mon == "USD" else ""
                 col_info, col_act = st.columns([5, 1])
                 with col_info:
-                    st.markdown(f"{d['name']} — {fmt_d(d['monto_mes'])} — Pagado: {fmt_d(d['pagado'])} — {status}")
+                    st.markdown(f"{d['name']} — {fmt_d(d['monto_mes'])}{crc_note} — Pagado: {fmt_d(d['pagado'])} — {status}")
                 with col_act:
                     ca, cb = st.columns(2)
                     with ca:
