@@ -177,14 +177,17 @@ def render():
         by_month = m_copy.groupby("mes").agg({"saldo_crc": "sum", "pago_crc": "sum"}).sort_index()
 
         if not by_month.empty:
-            latest_saldo = by_month["saldo_crc"].iloc[-1]
-            latest_pago = by_month["pago_crc"].iloc[-1]
-            total_pagado_all = m_copy["pago_crc"].sum()
+            current_mes = f"{now.year}-{now.month:02d}"
+            if current_mes in by_month.index:
+                mes_saldo = by_month.loc[current_mes, "saldo_crc"]
+                mes_pago = by_month.loc[current_mes, "pago_crc"]
+            else:
+                mes_saldo = 0.0
+                mes_pago = 0.0
 
-            mc1, mc2, mc3 = st.columns(3)
-            mc1.metric("Deuda total", f"₡{latest_saldo:,.0f}")
-            mc2.metric("Pagado (mes)", f"₡{latest_pago:,.0f}")
-            mc3.metric("Total pagado", f"₡{total_pagado_all:,.0f}")
+            mc1, mc2 = st.columns(2)
+            mc1.metric(f"Deuda total ({MONTH_NAMES[now.month - 1]})", f"₡{mes_saldo:,.0f}")
+            mc2.metric(f"Pagado ({MONTH_NAMES[now.month - 1]})", f"₡{mes_pago:,.0f}")
 
             with st.expander("📊 Tendencia deuda total"):
                 chart_df = by_month.copy()
