@@ -62,11 +62,14 @@ def show_alerts():
                 alerts.append(("error", f"💸 {cat.capitalize()}: excede presupuesto ({fmt(spent)}/{fmt(limit)})"))
 
     debts = get_df("debts")
-    if not debts.empty:
-        today = datetime.now().strftime("%Y-%m-%d")
+    debt_monthly = get_df("debt_monthly")
+    if not debts.empty and not debt_monthly.empty:
         for _, d in debts.iterrows():
-            if d.get("due") and d["due"] <= today and d["paid"] < d["total"]:
-                alerts.append(("error", f"🔴 Deuda vencida: {d['name']}"))
+            dm = debt_monthly[debt_monthly["debt_id"] == d["id"]]
+            if not dm.empty:
+                latest = dm.sort_values("ts", ascending=False).iloc[0]
+                if float(latest["saldo"]) > 0 and float(latest["pago"]) == 0:
+                    alerts.append(("warning", f"💳 Deuda sin pago este periodo: {d['name']}"))
 
     metas = get_df("metas")
     if not metas.empty:

@@ -55,9 +55,18 @@ def _build_context():
         ctx += "\n"
 
     if not debts.empty:
+        debt_monthly = get_df("debt_monthly")
         ctx += "DEUDAS:\n"
         for _, d in debts.iterrows():
-            ctx += f"{d['name']}:{fmt(d['total']-d['paid'])} pendiente\n"
+            dm = debt_monthly[debt_monthly["debt_id"] == d["id"]] if not debt_monthly.empty else pd.DataFrame()
+            if not dm.empty:
+                latest = dm.sort_values("ts", ascending=False).iloc[0]
+                saldo = float(latest["saldo"])
+                mon = d.get("moneda", "CRC") or "CRC"
+                label = f"${saldo:,.2f}" if mon == "USD" else fmt(saldo)
+                ctx += f"{d['name']}: saldo {label}\n"
+            else:
+                ctx += f"{d['name']}: sin registros\n"
         ctx += "\n"
 
     if not habitos.empty:
