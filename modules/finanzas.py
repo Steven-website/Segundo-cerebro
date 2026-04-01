@@ -262,10 +262,37 @@ def render():
 
     # --- Presupuesto vs Realidad ---
     with st.expander("📊 Presupuesto vs Realidad", expanded=False):
+        # Calculate monthly totals
+        total_pres_mensual = sum(v for k, v in budget.items() if k != "ingreso")
+        total_gasto_mensual = float(month_txs[month_txs["type"] == "gasto"]["amt"].sum()) if not month_txs.empty else 0
+        # Calculate biweekly totals
+        total_pres_quincenal = total_pres_mensual / 2
+        q1_txs = _filter_by_period(month_txs, "quincena1", now)
+        q2_txs = _filter_by_period(month_txs, "quincena2", now)
+        gasto_q1 = float(q1_txs[q1_txs["type"] == "gasto"]["amt"].sum()) if not q1_txs.empty else 0
+        gasto_q2 = float(q2_txs[q2_txs["type"] == "gasto"]["amt"].sum()) if not q2_txs.empty else 0
+        today_day = now.day
+        gasto_quincenal = gasto_q1 if today_day <= 15 else gasto_q2
+
+        st.markdown("**Totales mensuales**")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Presupuesto", fmt(total_pres_mensual))
+        m2.metric("Gastado", fmt(total_gasto_mensual))
+        diff_m = total_pres_mensual - total_gasto_mensual
+        m3.metric("Disponible", fmt(diff_m), delta="OK" if diff_m >= 0 else "Excedido", delta_color="normal" if diff_m >= 0 else "inverse")
+
+        st.markdown("**Totales quincenales** (quincena actual)")
+        q1, q2, q3 = st.columns(3)
+        q1.metric("Presupuesto", fmt(total_pres_quincenal))
+        q2.metric("Gastado", fmt(gasto_quincenal))
+        diff_q = total_pres_quincenal - gasto_quincenal
+        q3.metric("Disponible", fmt(diff_q), delta="OK" if diff_q >= 0 else "Excedido", delta_color="normal" if diff_q >= 0 else "inverse")
+
+        st.divider()
+
+        # Detail per category (uses selected period)
+        st.markdown(f"**Detalle por categoria ({period_label})**")
         budget_factor = 0.5 if period != "mensual" else 1.0
-        total_presupuesto = 0
-        total_gastado = 0
-        rows = []
         for cat, limit in budget.items():
             if cat == "ingreso":
                 continue
@@ -273,33 +300,20 @@ def render():
             adj_limit = limit * budget_factor
             spent = float(period_txs[(period_txs["type"] == "gasto") & (period_txs["cat"] == cat)]["amt"].sum()) if not period_txs.empty else 0
             diff = adj_limit - spent
-            total_presupuesto += adj_limit
-            total_gastado += spent
-            status = "✅" if diff >= 0 else "🔴"
-            rows.append({"cat": cat, "icon": icon, "limit": adj_limit, "spent": spent, "diff": diff, "status": status})
-
-        # Summary metrics
-        total_diff = total_presupuesto - total_gastado
-        s1, s2, s3 = st.columns(3)
-        s1.metric("Presupuesto", fmt(total_presupuesto))
-        s2.metric("Gastado", fmt(total_gastado))
-        color = "normal" if total_diff >= 0 else "inverse"
-        s3.metric("Disponible", fmt(total_diff), delta="Dentro del presupuesto" if total_diff >= 0 else "Excedido", delta_color=color)
-
-        # Detail per category
-        for r in rows:
+            if adj_limit == 0 and spent == 0:
+                continue
             col_cat, col_pres, col_real, col_diff = st.columns([3, 2, 2, 2])
             with col_cat:
-                st.markdown(f"{r['icon']} **{r['cat'].capitalize()}**")
+                st.markdown(f"{icon} **{cat.capitalize()}**")
             with col_pres:
-                st.caption(f"Pres: {fmt(r['limit'])}")
+                st.caption(f"Pres: {fmt(adj_limit)}")
             with col_real:
-                st.caption(f"Real: {fmt(r['spent'])}")
+                st.caption(f"Real: {fmt(spent)}")
             with col_diff:
-                if r['diff'] >= 0:
-                    st.caption(f"✅ {fmt(r['diff'])}")
+                if diff >= 0:
+                    st.caption(f"✅ {fmt(diff)}")
                 else:
-                    st.caption(f"🔴 {fmt(abs(r['diff']))}")
+                    st.caption(f"🔴 {fmt(abs(diff))}")
 
     # --- Budget progress + Transactions ---
     col_budget, col_txs = st.columns(2)
