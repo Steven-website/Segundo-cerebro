@@ -136,39 +136,18 @@ with col_logout:
         st.session_state["current_user"] = ""
         st.rerun()
 
-# Two-row navigation
-ROW1 = ["◈ Dashboard", "📌 Hoy", "◉ Habitos", "◈ Proyectos", "₡ Finanzas", "◎ Ahorros & Deudas", "🛍️ Lista de deseos"]
-ROW2 = ["📝 Notas", "🎯 Metas", "📅 Calendario", "◣ Inventario", "🎤 Audios", "🍅 Pomodoro", "📊 Reportes", "📋 Historial", "🔍 Buscar", "💾 Backup", "🗑️ Papelera", "👤 Perfil"]
-
-if "nav_page" not in st.session_state:
-    st.session_state["nav_page"] = "◈ Dashboard"
-
-current = st.session_state["nav_page"]
-row1_idx = ROW1.index(current) if current in ROW1 else None
-row2_idx = ROW2.index(current) if current in ROW2 else None
-
-r1 = st.radio("Nav1", ROW1, horizontal=True, label_visibility="collapsed",
-               index=row1_idx if row1_idx is not None else 0,
-               key="nav_row1")
-r2 = st.radio("Nav2", ROW2, horizontal=True, label_visibility="collapsed",
-               index=row2_idx if row2_idx is not None else 0,
-               key="nav_row2")
-
-# Determine which row was clicked by detecting changes
-if r1 != st.session_state.get("_prev_r1"):
-    st.session_state["nav_page"] = r1
-    st.session_state["_prev_r1"] = r1
-    st.session_state["_prev_r2"] = r2
-    page = r1
-elif r2 != st.session_state.get("_prev_r2"):
-    st.session_state["nav_page"] = r2
-    st.session_state["_prev_r1"] = r1
-    st.session_state["_prev_r2"] = r2
-    page = r2
-else:
-    st.session_state["_prev_r1"] = r1
-    st.session_state["_prev_r2"] = r2
-    page = st.session_state["nav_page"]
+# Navigation pills (single selection, wraps automatically)
+NAV_OPTIONS = [
+    "◈ Dashboard", "📌 Hoy", "◉ Habitos", "◈ Proyectos", "₡ Finanzas",
+    "◎ Ahorros & Deudas", "🛍️ Lista de deseos", "📝 Notas", "🎯 Metas",
+    "📅 Calendario", "◣ Inventario", "🎤 Audios", "🍅 Pomodoro",
+    "📊 Reportes", "📋 Historial", "🔍 Buscar", "💾 Backup",
+    "🗑️ Papelera", "👤 Perfil",
+]
+page = st.pills("Nav", NAV_OPTIONS, default="◈ Dashboard",
+                 label_visibility="collapsed", key="nav_pills")
+if page is None:
+    page = "◈ Dashboard"
 
 # Map shortened labels back to routing names
 if page == "💾 Backup":
