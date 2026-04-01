@@ -126,8 +126,9 @@ def render():
                                  key="fin_month", label_visibility="collapsed")
     with col_year:
         min_year = now.year - 3
-        years = list(range(now.year, min_year - 1, -1))
-        sel_year = st.selectbox("Año", years, index=0, key="fin_year", label_visibility="collapsed")
+        years = list(range(now.year + 1, min_year - 1, -1))
+        default_year_idx = years.index(now.year)
+        sel_year = st.selectbox("Año", years, index=default_year_idx, key="fin_year", label_visibility="collapsed")
 
     is_current_month = (sel_month == now.month and sel_year == now.year)
 
