@@ -162,11 +162,17 @@ def render():
     st.caption(f"Tipo de cambio: **1 USD = ₡{tc:,.0f}**")
 
     # --- Migrate old "mes" column to "periodo" ---
-    if not monthly.empty and "mes" in monthly.columns and "periodo" not in monthly.columns:
-        monthly = monthly.rename(columns={"mes": "periodo"})
-        # Convert old "2026-04" to "2026-04-Q1"
-        monthly["periodo"] = monthly["periodo"].apply(lambda x: f"{x}-Q1" if len(str(x)) == 7 else x)
+    if not monthly.empty and "mes" in monthly.columns:
+        if "periodo" not in monthly.columns or monthly["periodo"].eq("").all():
+            monthly["periodo"] = monthly["mes"].apply(lambda x: f"{x}-Q1" if len(str(x)) == 7 else x)
+        monthly = monthly.drop(columns=["mes"], errors="ignore")
         save_df("debt_monthly", monthly)
+    elif not monthly.empty and "periodo" in monthly.columns:
+        # Fix any old format values still in periodo (e.g. "2026-04" without Q)
+        needs_fix = monthly["periodo"].str.len() == 7
+        if needs_fix.any():
+            monthly.loc[needs_fix, "periodo"] = monthly.loc[needs_fix, "periodo"] + "-Q1"
+            save_df("debt_monthly", monthly)
 
     # --- Total debt summary (all debts converted to CRC) ---
     if not debts.empty and not monthly.empty and "periodo" in monthly.columns:
