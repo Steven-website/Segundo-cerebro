@@ -78,6 +78,88 @@ def _auto_generate_recurring(txs):
     return txs
 
 
+def _inject_debt_payments(txs):
+    """Replace manual debt transactions with live data from debt_monthly."""
+    from core.utils import get_tipo_cambio
+    debt_monthly = get_df("debt_monthly")
+    debts = get_df("debts")
+    if debt_monthly.empty or debts.empty:
+        return txs
+
+    # Remove old manual debt transactions
+    if not txs.empty:
+        txs = txs[txs["cat"] != "deudas"]
+
+    tc = get_tipo_cambio()
+    periodo_col = "periodo" if "periodo" in debt_monthly.columns else "mes"
+
+    # Ensure moneda column
+    if "moneda" not in debts.columns:
+        debts["moneda"] = "CRC"
+    debt_info = dict(zip(debts["id"], debts[["name", "origen", "moneda"]].to_dict("index")))
+
+    new_txs = []
+    for _, r in debt_monthly.iterrows():
+        pago = float(r["pago"])
+        if pago <= 0:
+            continue
+        info = debt_info.get(r["debt_id"], {})
+        name = info.get("name", "Deuda")
+        origen = info.get("origen", "")
+        mon = info.get("moneda", "CRC") or "CRC"
+
+        # Derive fecha from periodo (e.g. "2026-04-Q1" -> "2026-04-01", "2026-04-Q2" -> "2026-04-16")
+        periodo = str(r.get(periodo_col, ""))
+        if "-Q1" in periodo:
+            fecha = periodo.replace("-Q1", "-01")
+        elif "-Q2" in periodo:
+            fecha = periodo.replace("-Q2", "-16")
+        else:
+            fecha = periodo + "-01" if len(periodo) == 7 else periodo
+
+        amt = pago * tc if mon == "USD" else pago
+        desc = f"Deuda: {name} ({origen})"
+        if mon == "USD":
+            desc += f" ${pago:,.2f}"
+
+        new_txs.append({
+            "id": f"debt_{r['id']}", "type": "gasto", "desc": desc,
+            "amt": amt, "cat": "deudas", "fecha": fecha, "ts": float(r["ts"]),
+        })
+
+    if new_txs:
+        txs = pd.concat([txs, pd.DataFrame(new_txs)], ignore_index=True)
+    return txs
+
+
+def _inject_savings_payments(txs):
+    """Replace manual savings transactions with live data from savings_hist."""
+    savings_hist = get_df("savings_hist")
+    savings = get_df("savings")
+    if savings_hist.empty or savings.empty:
+        return txs
+
+    # Remove old manual savings transactions
+    if not txs.empty:
+        txs = txs[txs["cat"] != "ahorro"]
+
+    savings_names = dict(zip(savings["id"], savings["name"]))
+    new_txs = []
+    for _, r in savings_hist.iterrows():
+        monto = float(r["monto"])
+        if monto <= 0:
+            continue
+        name = savings_names.get(r["saving_id"], "Ahorro")
+        new_txs.append({
+            "id": f"sav_{r['id']}", "type": "gasto", "desc": f"Ahorro: {name}",
+            "amt": monto, "cat": "ahorro", "fecha": r["fecha"], "ts": float(r["ts"]),
+        })
+
+    if new_txs:
+        txs = pd.concat([txs, pd.DataFrame(new_txs)], ignore_index=True)
+    return txs
+
+
 def _get_month_txs(txs, year=None, month=None):
     if txs.empty:
         return txs
@@ -105,6 +187,8 @@ def render():
 
     txs = get_df("txs")
     txs = _auto_generate_recurring(txs)
+    txs = _inject_debt_payments(txs)
+    txs = _inject_savings_payments(txs)
     budget_df = get_df("budget")
 
     if budget_df.empty:

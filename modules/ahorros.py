@@ -114,7 +114,6 @@ def render():
                             savings.loc[savings["id"] == s["id"], "current"] = new_balance
                             save_df("savings", savings)
                             _record_savings_contribution(s["id"], amount, new_balance)
-                            _register_tx("ahorro", f"Ahorro: {s['name']}", amount)
                             st.rerun()
                     c_edit, c_chart = st.columns(2)
                     with c_edit:
@@ -355,13 +354,6 @@ def render():
                             updated = monthly.copy()
                             if existing_rec is not None:
                                 updated = updated[updated["id"] != existing_rec["id"]]
-                            old_pago = float(existing_rec["pago"]) if existing_rec is not None else 0.0
-                            diff_pago = pago - old_pago
-                            if diff_pago > 0:
-                                if mon == "USD":
-                                    _register_tx("deudas", f"Deuda: {debt['name']} ({debt.get('origen', '')}) ${diff_pago:,.2f}", diff_pago * tc)
-                                else:
-                                    _register_tx("deudas", f"Deuda: {debt['name']} ({debt.get('origen', '')})", diff_pago)
                             save_df("debt_monthly", pd.concat([pd.DataFrame([new_rec]), updated], ignore_index=True))
                             st.rerun()
 
