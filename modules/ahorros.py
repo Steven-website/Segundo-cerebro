@@ -161,6 +161,39 @@ def render():
 
     st.caption(f"Tipo de cambio: **1 USD = ₡{tc:,.0f}**")
 
+    # --- Total debt summary (all debts converted to CRC) ---
+    if not debts.empty and not monthly.empty:
+        if "moneda" not in debts.columns:
+            debts["moneda"] = "CRC"
+        debts["moneda"] = debts["moneda"].fillna("CRC").replace("", "CRC")
+
+        # Build per-month totals across all debts (in CRC)
+        debt_moneda = dict(zip(debts["id"], debts["moneda"]))
+        m_copy = monthly.copy()
+        m_copy["mon"] = m_copy["debt_id"].map(debt_moneda).fillna("CRC")
+        m_copy["saldo_crc"] = m_copy.apply(lambda r: r["saldo"] * tc if r["mon"] == "USD" else r["saldo"], axis=1)
+        m_copy["pago_crc"] = m_copy.apply(lambda r: r["pago"] * tc if r["mon"] == "USD" else r["pago"], axis=1)
+
+        by_month = m_copy.groupby("mes").agg({"saldo_crc": "sum", "pago_crc": "sum"}).sort_index()
+
+        if not by_month.empty:
+            latest_saldo = by_month["saldo_crc"].iloc[-1]
+            latest_pago = by_month["pago_crc"].iloc[-1]
+            total_pagado_all = m_copy["pago_crc"].sum()
+
+            mc1, mc2, mc3 = st.columns(3)
+            mc1.metric("Deuda total", f"₡{latest_saldo:,.0f}")
+            mc2.metric("Pagado (mes)", f"₡{latest_pago:,.0f}")
+            mc3.metric("Total pagado", f"₡{total_pagado_all:,.0f}")
+
+            with st.expander("📊 Tendencia deuda total"):
+                chart_df = by_month.copy()
+                chart_df.columns = ["Deuda total ₡", "Pagos ₡"]
+                st.caption("Deuda total en colones por mes")
+                st.line_chart(chart_df[["Deuda total ₡"]], color=["#c96a6a"])
+                st.caption("Pagos en colones por mes")
+                st.bar_chart(chart_df[["Pagos ₡"]], color=["#4a9e7a"])
+
     # --- Migrate old format ---
     if not debts.empty and "monto_mes" in debts.columns:
         migrated_debts = []
