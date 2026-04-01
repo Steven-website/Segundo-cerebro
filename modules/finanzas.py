@@ -116,18 +116,34 @@ def render():
 
     now = datetime.now()
 
+    # --- Month / Year selector ---
+    col_month, col_year, col_period = st.columns([2, 1, 4])
+    MONTH_NAMES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+                   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+    with col_month:
+        sel_month = st.selectbox("Mes", range(1, 13), index=now.month - 1,
+                                 format_func=lambda m: MONTH_NAMES[m - 1],
+                                 key="fin_month", label_visibility="collapsed")
+    with col_year:
+        min_year = now.year - 3
+        years = list(range(now.year, min_year - 1, -1))
+        sel_year = st.selectbox("Año", years, index=0, key="fin_year", label_visibility="collapsed")
+
+    is_current_month = (sel_month == now.month and sel_year == now.year)
+
     # --- Period selector ---
     period_options = {"mensual": "Mes completo", "quincena1": "Quincena 1 (1-15)", "quincena2": "Quincena 2 (16-fin)"}
     today_day = now.day
-    default_idx = 1 if today_day <= 15 else 2  # auto-select current quincena
-    period = st.radio(
-        "Periodo", list(period_options.keys()),
-        format_func=lambda x: period_options[x],
-        horizontal=True, index=default_idx, key="fin_period",
-        label_visibility="collapsed",
-    )
+    default_idx = 1 if (today_day <= 15 and is_current_month) else 2 if is_current_month else 0
+    with col_period:
+        period = st.radio(
+            "Periodo", list(period_options.keys()),
+            format_func=lambda x: period_options[x],
+            horizontal=True, index=default_idx, key="fin_period",
+            label_visibility="collapsed",
+        )
 
-    month_txs = _get_month_txs(txs)
+    month_txs = _get_month_txs(txs, sel_year, sel_month)
     period_txs = _filter_by_period(month_txs, period, now)
 
     ingresos = float(period_txs[period_txs["type"] == "ingreso"]["amt"].sum()) if not period_txs.empty else 0
@@ -135,8 +151,8 @@ def render():
     balance = ingresos - gastos
 
     # --- Comparison vs previous period ---
-    prev_m = now.month - 1
-    prev_y = now.year
+    prev_m = sel_month - 1
+    prev_y = sel_year
     if prev_m <= 0:
         prev_m += 12
         prev_y -= 1
@@ -198,7 +214,7 @@ def render():
                     cat_totals = gastos_df.groupby("cat")["amt"].sum().reset_index()
                     cat_totals.columns = ["Categoria", "Monto"]
                     cat_totals["Categoria"] = cat_totals["Categoria"].apply(lambda x: f"{CAT_ICONS.get(x, '')} {x.capitalize()}")
-                    st.caption("Gastos por categoria (mes actual)")
+                    st.caption(f"Gastos por categoria ({MONTH_NAMES[sel_month - 1]} {sel_year})")
                     st.bar_chart(cat_totals.set_index("Categoria"))
 
         st.divider()
