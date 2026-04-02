@@ -187,10 +187,15 @@ def _render_habits_list(habitos):
 
     today_str = datetime.now().strftime("%Y-%m-%d")
 
-    # Separate pending vs completed today
+    # Filter habits that apply today, then separate pending vs completed
+    from core.utils import habit_applies_today
     pending_habs = []
     done_habs = []
+    other_habs = []
     for idx, h in habitos.iterrows():
+        if not habit_applies_today(h):
+            other_habs.append(h)
+            continue
         if _is_day_complete(h, today_str):
             done_habs.append(h)
         else:
@@ -207,6 +212,12 @@ def _render_habits_list(habitos):
     if done_habs:
         with st.expander(f"✅ Completados hoy ({len(done_habs)})"):
             for h in done_habs:
+                _render_habit_card(h, habitos, today_str)
+
+    # --- Other days habits (collapsed) ---
+    if other_habs:
+        with st.expander(f"📅 Otros dias ({len(other_habs)})"):
+            for h in other_habs:
                 _render_habit_card(h, habitos, today_str)
 
 
