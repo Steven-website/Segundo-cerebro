@@ -286,7 +286,7 @@ def _render_habit_card(h, habitos, today_str):
                 if badge_label:
                     st.caption(f"{badge} {badge_label}")
 
-                # Mini calendar (last 7 days)
+                # Mini calendar (last 7 days) - clickable to toggle past days
                 day_cols = st.columns(7)
                 for d in range(6, -1, -1):
                     day = datetime.now() - timedelta(days=d)
@@ -296,14 +296,32 @@ def _render_habit_card(h, habitos, today_str):
                     partial = _day_pct(h, ds)
                     is_today = ds == today_str
                     with day_cols[6 - d]:
-                        if full:
-                            st.markdown(f"**:green[{day_name}]**")
-                        elif partial > 0:
-                            st.markdown(f"**:orange[{day_name}]**")
-                        elif is_today:
-                            st.markdown(f"**:orange[{day_name}]**")
-                        else:
-                            st.markdown(f"*{day_name}*")
+                        if d > 0:  # Past days - toggleable
+                            day_label = f":green[{day_name}]" if full else f":orange[{day_name}]" if partial > 0 else day_name
+                            if st.button(day_label, key=f"hcal_{h['id']}_{ds}", use_container_width=True):
+                                checks = parse_checks(h.get("checks", "{}"))
+                                reps = [r.strip() for r in h.get("repeticiones", "").split(",") if r.strip()]
+                                if reps:
+                                    cur = checks.get(ds, {})
+                                    if not isinstance(cur, dict):
+                                        cur = {}
+                                    all_done = all(cur.get(r, False) for r in reps)
+                                    checks[ds] = {r: (not all_done) for r in reps}
+                                else:
+                                    checks[ds] = not bool(checks.get(ds, False))
+                                habitos.loc[habitos["id"] == h["id"], "checks"] = json.dumps(checks)
+                                h_updated = dict(h)
+                                h_updated["checks"] = json.dumps(checks)
+                                habitos.loc[habitos["id"] == h["id"], "streak"] = _calc_streak(h_updated)
+                                save_df("habitos", habitos)
+                                st.rerun()
+                        else:  # Today - just display
+                            if full:
+                                st.markdown(f"**:green[{day_name}]**")
+                            elif partial > 0:
+                                st.markdown(f"**:orange[{day_name}]**")
+                            else:
+                                st.markdown(f"**:orange[{day_name}]**")
 
                 c_edit, c_del = st.columns(2)
                 with c_edit:

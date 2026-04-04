@@ -31,6 +31,8 @@ SCHEMAS = {
     "metas_hist": {"id": str, "meta_id": str, "progreso": float, "fecha": str, "ts": float},
     "wishlist_cats": {"id": str, "nombre": str, "emoji": str, "orden": int, "ts": float},
     "wishlist": {"id": str, "cat_id": str, "nombre": str, "link": str, "imagen": str, "precio_usd": float, "precio_crc": float, "prioridad": str, "comprado": bool, "notas": str, "ts": float},
+    "books": {"id": str, "titulo": str, "autor": str, "paginas": int, "paginas_leidas": int, "estado": str, "categoria": str, "fecha_inicio": str, "fecha_fin": str, "rating": int, "notas": str, "ts": float},
+    "reading_sessions": {"id": str, "book_id": str, "fecha": str, "minutos": int, "paginas": int, "notas": str, "ts": float},
 }
 
 
