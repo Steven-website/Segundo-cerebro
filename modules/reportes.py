@@ -172,6 +172,47 @@ def _render_monthly():
                 c1.metric("Sesiones", total_sessions)
                 c2.metric("Minutos enfocados", total_min)
 
+    # --- Exercise ---
+    exercise = get_df("exercise_log")
+    if not exercise.empty:
+        month_ex = exercise[exercise["fecha"].str.startswith(prefix)]
+        if not month_ex.empty:
+            st.subheader("Ejercicio del mes")
+            ex_sessions = len(month_ex)
+            ex_mins = int(month_ex["duracion"].sum())
+            ex_sports = month_ex["deporte"].nunique()
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Sesiones", ex_sessions)
+            c2.metric("Minutos", ex_mins)
+            c3.metric("Deportes", ex_sports)
+
+            sport_stats = month_ex.groupby("deporte")["duracion"].sum().reset_index()
+            sport_stats.columns = ["Deporte", "Minutos"]
+            st.bar_chart(sport_stats.set_index("Deporte"), color=["#4a9e7a"])
+
+    # --- Reading ---
+    reading = get_df("reading_sessions")
+    books = get_df("books")
+    if not reading.empty:
+        month_rd = reading[reading["fecha"].str.startswith(prefix)]
+        if not month_rd.empty:
+            st.subheader("Lectura del mes")
+            rd_sessions = len(month_rd)
+            rd_mins = int(month_rd["minutos"].sum())
+            rd_pages = int(month_rd["paginas"].sum())
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Sesiones", rd_sessions)
+            c2.metric("Minutos", rd_mins)
+            c3.metric("Paginas", rd_pages)
+
+    if not books.empty:
+        completed_month = books[(books["estado"] == "completado") & (books["fecha_fin"].str.startswith(prefix))]
+        if not completed_month.empty:
+            st.caption(f"📚 Libros completados: {len(completed_month)}")
+            for _, b in completed_month.iterrows():
+                stars = "⭐" * int(b["rating"]) if b["rating"] > 0 else ""
+                st.caption(f"  {b['titulo']} — {b['autor']} {stars}")
+
     # --- PDF Export ---
     _pdf_export_button(f"reporte_{prefix}")
 

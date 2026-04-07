@@ -38,6 +38,9 @@ def render():
     txs = get_df("txs")
     proyectos = get_df("proyectos")
     savings = get_df("savings")
+    exercise = get_df("exercise_log")
+    books = get_df("books")
+    reading = get_df("reading_sessions")
 
     st.markdown(f"### {saludo} 👋")
     st.caption(now.strftime("%A %d de %B, %Y").capitalize())
@@ -180,6 +183,48 @@ def render():
                 st.progress(pct / 100, text=f"{pct}% ({int(done)}/{total})")
         else:
             st.caption("Sin proyectos")
+
+    # ═══ EXERCISE + READING ═══
+    has_exercise = not exercise.empty
+    has_reading = not books.empty or not reading.empty
+    if has_exercise or has_reading:
+        st.divider()
+        col_ex, col_rd = st.columns(2)
+
+        with col_ex:
+            st.markdown("**🏋️ Ejercicio**")
+            if has_exercise:
+                month_ex = exercise[exercise["fecha"].str.startswith(now.strftime("%Y-%m"))]
+                today_ex = exercise[exercise["fecha"] == today_str]
+                # Streak
+                streak = 0
+                check = now
+                while True:
+                    ds = check.strftime("%Y-%m-%d")
+                    if not exercise[exercise["fecha"] == ds].empty:
+                        streak += 1
+                        check -= timedelta(days=1)
+                    else:
+                        break
+                st.metric("Sesiones este mes", len(month_ex), delta=f"🔥 {streak} dias racha" if streak > 0 else None)
+                if not month_ex.empty:
+                    top_sport = month_ex["deporte"].value_counts().index[0]
+                    st.caption(f"Hoy: {len(today_ex)} sesiones | Top: {top_sport}")
+            else:
+                st.caption("Sin sesiones registradas")
+
+        with col_rd:
+            st.markdown("**📖 Lectura**")
+            if has_reading:
+                month_rd = reading[reading["fecha"].str.startswith(now.strftime("%Y-%m"))] if not reading.empty else pd.DataFrame()
+                reading_now = len(books[books["estado"] == "leyendo"]) if not books.empty else 0
+                completed = len(books[books["estado"] == "completado"]) if not books.empty else 0
+                month_pages = int(month_rd["paginas"].sum()) if not month_rd.empty else 0
+                month_mins = int(month_rd["minutos"].sum()) if not month_rd.empty else 0
+                st.metric("Leyendo", reading_now, delta=f"{completed} completados")
+                st.caption(f"Este mes: {month_pages} pag | {month_mins} min")
+            else:
+                st.caption("Sin libros registrados")
 
     st.divider()
 
