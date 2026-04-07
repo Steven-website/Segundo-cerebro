@@ -21,13 +21,13 @@ def render():
 
     # --- Quick log ---
     with st.form("quick_exercise", clear_on_submit=True):
-        c1, c2, c3 = st.columns([3, 2, 2])
-        deporte = c1.selectbox("Deporte", DEPORTES, label_visibility="collapsed")
-        duracion = c2.number_input("Min", min_value=1, value=30, label_visibility="collapsed")
-        fecha = c3.date_input("Fecha", value=today.date(), label_visibility="collapsed")
-        c4, c5 = st.columns([4, 1])
-        notas = c4.text_input("Notas (opcional)", label_visibility="collapsed", placeholder="Notas...")
-        submitted = c5.form_submit_button("+ Registrar", type="primary")
+        c1, c2 = st.columns(2)
+        deporte = c1.selectbox("Deporte", DEPORTES)
+        fecha = c2.date_input("Fecha", value=today.date())
+        c3, c4 = st.columns(2)
+        duracion = c3.number_input("Minutos", min_value=1, value=30)
+        notas = c4.text_input("Notas", placeholder="Opcional")
+        submitted = st.form_submit_button("+ Registrar", type="primary", use_container_width=True)
 
         if submitted:
             new = {

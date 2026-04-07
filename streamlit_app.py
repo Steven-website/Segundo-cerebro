@@ -140,7 +140,7 @@ with col_logout:
 # Navigation pills (single selection, wraps automatically)
 NAV_OPTIONS = [
     "◈ Dashboard", "📌 Hoy", "◉ Habitos", "◈ Proyectos", "₡ Finanzas",
-    "◎ Ahorros & Deudas", "🛍️ Lista de deseos", "📖 Lectura", "🏋️ Ejercicio", "📝 Notas", "🎯 Metas",
+    "◎ Deudas", "🛍️ Deseos", "📖 Lectura", "🏋️ Ejercicio", "📝 Notas", "🎯 Metas",
     "📅 Calendario", "◣ Inventario", "🎤 Audios", "🍅 Pomodoro",
     "📊 Reportes", "📋 Historial", "🔍 Buscar", "💾 Backup",
     "🗑️ Papelera", "👤 Perfil",
@@ -153,6 +153,10 @@ if page is None:
 # Map shortened labels back to routing names
 if page == "💾 Backup":
     page = "💾 Backup & Importar"
+elif page == "◎ Deudas":
+    page = "◎ Ahorros & Deudas"
+elif page == "🛍️ Deseos":
+    page = "🛍️ Lista de deseos"
 
 # Alerts
 show_alerts()

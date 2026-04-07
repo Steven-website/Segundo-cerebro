@@ -129,13 +129,14 @@ def _render_book_card(book, books, sessions):
             if book["estado"] == "leyendo":
                 st.markdown("**Registrar lectura**")
                 with st.form(f"session_form_{book['id']}", clear_on_submit=True):
-                    sc1, sc2, sc3 = st.columns(3)
+                    sc1, sc2 = st.columns(2)
                     s_fecha = sc1.date_input("Fecha", value=datetime.now().date(), key=f"sf_{book['id']}")
                     s_mins = sc2.number_input("Minutos", min_value=1, value=30, key=f"sm_{book['id']}")
+                    sc3, sc4 = st.columns(2)
                     s_pags = sc3.number_input("Paginas leidas", min_value=0, value=0, key=f"sp_{book['id']}")
-                    s_notas = st.text_input("Notas (opcional)", key=f"sn_{book['id']}")
+                    s_notas = sc4.text_input("Notas", key=f"sn_{book['id']}", placeholder="Opcional")
 
-                    if st.form_submit_button("Registrar", type="primary"):
+                    if st.form_submit_button("Registrar", type="primary", use_container_width=True):
                         new_session = {
                             "id": uid(), "book_id": book["id"],
                             "fecha": s_fecha.strftime("%Y-%m-%d"),
