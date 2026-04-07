@@ -268,6 +268,37 @@ def _render_annual():
         prod_df = pd.DataFrame(months_prod)
         st.bar_chart(prod_df.set_index("Mes"), color=["#4a9e7a", "#c96a6a"])
 
+    # --- Exercise annual ---
+    exercise = get_df("exercise_log")
+    if not exercise.empty:
+        year_ex = exercise[exercise["fecha"].str.startswith(prefix)]
+        if not year_ex.empty:
+            st.divider()
+            st.subheader(f"Ejercicio {year}")
+            months_ex = []
+            for m in range(1, 13):
+                mp = f"{year}-{m:02d}"
+                m_ex = year_ex[year_ex["fecha"].str.startswith(mp)]
+                month_name = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"][m - 1]
+                months_ex.append({"Mes": month_name, "Sesiones": len(m_ex), "Minutos": int(m_ex["duracion"].sum()) if not m_ex.empty else 0})
+            ex_df = pd.DataFrame(months_ex)
+            st.bar_chart(ex_df.set_index("Mes")["Sesiones"], color="#4a9e7a")
+            c1, c2 = st.columns(2)
+            c1.metric("Total sesiones", len(year_ex))
+            c2.metric("Total minutos", int(year_ex["duracion"].sum()))
+
+    # --- Reading annual ---
+    books = get_df("books")
+    if not books.empty:
+        year_books = books[(books["estado"] == "completado") & (books["fecha_fin"].str.startswith(prefix))]
+        if not year_books.empty:
+            st.divider()
+            st.subheader(f"Lectura {year}")
+            st.metric("Libros completados", len(year_books))
+            for _, b in year_books.iterrows():
+                stars = "⭐" * int(b["rating"]) if b["rating"] > 0 else ""
+                st.caption(f"📗 {b['titulo']} — {b['autor']} {stars}")
+
     _pdf_export_button(f"reporte_{year}")
 
 
@@ -571,3 +602,45 @@ def _render_weekly_summary():
     fc1.metric("Ingresos", fmt(this_inc), delta=_delta(this_inc, prev_inc))
     fc2.metric("Gastos", fmt(this_exp), delta=_delta(this_exp, prev_exp), delta_color="inverse")
     fc3.metric("Balance", fmt(this_inc - this_exp))
+
+    # --- Exercise this week ---
+    exercise = get_df("exercise_log")
+    if not exercise.empty:
+        this_ex = 0
+        prev_ex = 0
+        this_ex_mins = 0
+        prev_ex_mins = 0
+        for _, e in exercise.iterrows():
+            if _in_range(e["fecha"], monday, sunday):
+                this_ex += 1
+                this_ex_mins += int(e["duracion"])
+            elif _in_range(e["fecha"], prev_monday, prev_sunday):
+                prev_ex += 1
+                prev_ex_mins += int(e["duracion"])
+        if this_ex > 0 or prev_ex > 0:
+            st.divider()
+            st.subheader("Ejercicio de la semana")
+            ec1, ec2 = st.columns(2)
+            ec1.metric("Sesiones", this_ex, delta=_delta(this_ex, prev_ex))
+            ec2.metric("Minutos", this_ex_mins, delta=_delta(this_ex_mins, prev_ex_mins))
+
+    # --- Reading this week ---
+    reading = get_df("reading_sessions")
+    if not reading.empty:
+        this_rd_mins = 0
+        prev_rd_mins = 0
+        this_rd_pags = 0
+        prev_rd_pags = 0
+        for _, r in reading.iterrows():
+            if _in_range(r["fecha"], monday, sunday):
+                this_rd_mins += int(r["minutos"])
+                this_rd_pags += int(r["paginas"])
+            elif _in_range(r["fecha"], prev_monday, prev_sunday):
+                prev_rd_mins += int(r["minutos"])
+                prev_rd_pags += int(r["paginas"])
+        if this_rd_mins > 0 or prev_rd_mins > 0:
+            st.divider()
+            st.subheader("Lectura de la semana")
+            rc1, rc2 = st.columns(2)
+            rc1.metric("Minutos", this_rd_mins, delta=_delta(this_rd_mins, prev_rd_mins))
+            rc2.metric("Paginas", this_rd_pags, delta=_delta(this_rd_pags, prev_rd_pags))
