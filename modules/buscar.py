@@ -6,13 +6,13 @@ from core.utils import PRIORITY_EMOJIS, mark_task_done
 
 def render():
     st.header("Buscar")
-    st.caption("Busca en tareas, proyectos, transacciones, inventario, habitos y audios")
+    st.caption("Busca en todo tu cerebro")
 
     col_search, col_filter = st.columns([4, 1])
     with col_search:
         search = st.text_input("Buscar...", placeholder="Escribe para buscar en todo tu cerebro", key="global_search")
     with col_filter:
-        type_filter = st.selectbox("Filtrar por", ["Todos", "Tareas", "Proyectos", "Finanzas", "Inventario", "Habitos", "Audios", "Comentarios"],
+        type_filter = st.selectbox("Filtrar por", ["Todos", "Tareas", "Proyectos", "Finanzas", "Inventario", "Habitos", "Libros", "Ejercicio", "Audios", "Comentarios"],
                                    key="search_type_filter")
 
     if not search or not search.strip():
@@ -74,6 +74,24 @@ def render():
             for _, a in audios.iterrows():
                 if query in a["titulo"].lower() or query in a.get("transcript", "").lower() or query in a.get("resumen", "").lower():
                     results.append({"icon": "🎤", "type": "Audio", "name": a["titulo"], "detail": a.get("resumen", "")[:60], "ts": a["ts"]})
+
+    # Books
+    if type_filter in ["Todos", "Libros"]:
+        books = get_df("books")
+        if not books.empty:
+            for _, b in books.iterrows():
+                if query in b["titulo"].lower() or query in b["autor"].lower() or query in b.get("notas", "").lower():
+                    state_icons = {"leyendo": "📖", "pendiente": "📚", "completado": "✅", "abandonado": "⏸️"}
+                    icon = state_icons.get(b["estado"], "📕")
+                    results.append({"icon": icon, "type": "Libro", "name": f"{b['titulo']} — {b['autor']}", "detail": f"{b['categoria']} | {b['estado']}", "ts": b["ts"]})
+
+    # Exercise
+    if type_filter in ["Todos", "Ejercicio"]:
+        exercise = get_df("exercise_log")
+        if not exercise.empty:
+            for _, e in exercise.iterrows():
+                if query in e["deporte"].lower() or query in e.get("notas", "").lower():
+                    results.append({"icon": "🏋️", "type": "Ejercicio", "name": f"{e['deporte']} — {int(e['duracion'])} min", "detail": e["fecha"], "ts": e["ts"]})
 
     # Comments
     if type_filter in ["Todos", "Comentarios"]:

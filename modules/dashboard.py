@@ -235,14 +235,25 @@ def render():
     with st.expander("📋 Actividad reciente"):
         activities = []
         if not tareas.empty:
-            for _, t in tareas.iterrows():
-                activities.append({"icon": "✅" if t["done"] else "⬜", "text": t["titulo"], "type": "tarea", "ts": t["ts"]})
+            for _, t in tareas.head(10).iterrows():
+                activities.append({"icon": "✅" if t["done"] else "⬜", "text": t["titulo"], "ts": t["ts"]})
         if not txs.empty:
             for _, tx in txs.head(10).iterrows():
                 sign = "+" if tx["type"] == "ingreso" else "-"
-                activities.append({"icon": "💰" if tx["type"] == "ingreso" else "💸", "text": f"{sign}{fmt(tx['amt'])} {tx['desc']}", "type": tx["type"], "ts": tx["ts"]})
+                activities.append({"icon": "💰" if tx["type"] == "ingreso" else "💸", "text": f"{sign}{fmt(tx['amt'])} {tx['desc']}", "ts": tx["ts"]})
+        if not exercise.empty:
+            for _, e in exercise.head(5).iterrows():
+                activities.append({"icon": "🏋️", "text": f"{e['deporte']} — {int(e['duracion'])} min", "ts": e["ts"]})
+        if not reading.empty:
+            for _, r in reading.head(5).iterrows():
+                book_name = ""
+                if not books.empty:
+                    bm = books[books["id"] == r["book_id"]]
+                    if not bm.empty:
+                        book_name = f" ({bm.iloc[0]['titulo']})"
+                activities.append({"icon": "📖", "text": f"{int(r['minutos'])} min, {int(r['paginas'])} pag{book_name}", "ts": r["ts"]})
         activities.sort(key=lambda x: x["ts"], reverse=True)
-        for a in activities[:10]:
+        for a in activities[:12]:
             st.markdown(f"{a['icon']} {a['text']}")
         if not activities:
             st.caption("Sin actividad aun")
