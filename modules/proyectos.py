@@ -196,9 +196,33 @@ def _render_projects_kanban(proyectos, tareas):
                             st.rerun()
 
 
+def _days_without_progress(proj_tasks):
+    """Return days since last task was completed, or days since project creation."""
+    if proj_tasks.empty:
+        return None
+    completed = proj_tasks[proj_tasks["done"] == True]
+    if not completed.empty and "fecha_completada" in completed.columns:
+        fechas = completed["fecha_completada"].dropna()
+        fechas = fechas[fechas != ""]
+        if not fechas.empty:
+            last = max(fechas)
+            try:
+                last_date = datetime.strptime(str(last)[:10], "%Y-%m-%d")
+                return (datetime.now() - last_date).days
+            except (ValueError, TypeError):
+                pass
+    # Fallback: use ts (timestamp) of last modified task
+    if "ts" in proj_tasks.columns:
+        last_ts = proj_tasks["ts"].max()
+        if last_ts and last_ts > 0:
+            last_date = datetime.fromtimestamp(last_ts)
+            return (datetime.now() - last_date).days
+    return None
+
+
 def _render_projects_list(proyectos, tareas):
-    """Traditional list view for projects."""
-    status_filter = st.selectbox("Filtrar", ["Todos", "Activos", "Pausados", "Completados"],
+    """Compact list view for projects."""
+    status_filter = st.selectbox("Filtrar", ["Todos", "Activos", "Pausados", "Completados", "Sin avance (+7 dias)"],
                                   label_visibility="collapsed", key="proj_status_f")
 
     filtered = proyectos.copy()
@@ -208,6 +232,23 @@ def _render_projects_list(proyectos, tareas):
         filtered = filtered[filtered["estado"] == "pausado"]
     elif status_filter == "Completados":
         filtered = filtered[filtered["estado"] == "completado"]
+    elif status_filter == "Sin avance (+7 dias)":
+        filtered = filtered[(filtered["estado"].isin(["activo", ""])) | (filtered["estado"].isna())]
+
+    # Pre-calculate stale projects for filter and badges
+    stale_ids = set()
+    for _, p in filtered.iterrows():
+        proj_tasks = tareas[tareas["proyecto"] == p["id"]] if not tareas.empty else pd.DataFrame()
+        days = _days_without_progress(proj_tasks)
+        if days is not None and days >= 7:
+            stale_ids.add(p["id"])
+
+    if status_filter == "Sin avance (+7 dias)":
+        filtered = filtered[filtered["id"].isin(stale_ids)]
+
+    if filtered.empty:
+        st.info("No hay proyectos en esta categoria.")
+        return
 
     for _, p in filtered.iterrows():
         area_label = AREA_LABELS.get(p["area"], p["area"])
@@ -221,36 +262,33 @@ def _render_projects_list(proyectos, tareas):
             estado = p.get("estado", "activo") or "activo"
             estado_label = ESTADOS.get(estado, estado)
 
-            col_info, col_actions = st.columns([5, 2])
+            col_info, col_progress, col_actions = st.columns([4, 2, 2])
             with col_info:
-                st.markdown(f"### {proj_emoji} {p['nombre']}")
-                st.caption(f"{area_label} | {estado_label}")
-                if p.get("desc"):
-                    st.caption(p["desc"][:100])
-                if p.get("fecha_inicio") or p.get("fecha_fin"):
-                    dates = []
-                    if p.get("fecha_inicio"):
-                        dates.append(f"Inicio: {p['fecha_inicio']}")
-                    if p.get("fecha_fin"):
-                        dates.append(f"Fin: {p['fecha_fin']}")
-                    st.caption(" | ".join(dates))
-                st.progress(pct / 100, text=f"{pct}% ({done_tasks}/{total_tasks} tareas)")
-
+                # Stale badge
+                days = _days_without_progress(proj_tasks)
+                stale_tag = ""
+                if days is not None and days >= 7 and estado in ("activo", ""):
+                    stale_tag = f"  :red[⏸ {days}d sin avance]"
+                st.markdown(f"**{proj_emoji} {p['nombre']}**{stale_tag}")
+                st.caption(f"{area_label} | {estado_label} | {done_tasks}/{total_tasks} tareas")
+            with col_progress:
+                st.progress(pct / 100, text=f"{pct}%")
             with col_actions:
-                if st.button("📂 Abrir", key=f"pview_{p['id']}", use_container_width=True, type="primary"):
-                    st.session_state["proj_viewing"] = p["id"]
-                    st.rerun()
-                c1, c2, c3 = st.columns(3)
+                c1, c2, c3, c4 = st.columns(4)
                 with c1:
-                    if st.button("✏️", key=f"pedit_{p['id']}", use_container_width=True):
+                    if st.button("📂", key=f"pview_{p['id']}", use_container_width=True, help="Abrir"):
+                        st.session_state["proj_viewing"] = p["id"]
+                        st.rerun()
+                with c2:
+                    if st.button("✏️", key=f"pedit_{p['id']}", use_container_width=True, help="Editar"):
                         st.session_state["proj_editing"] = True
                         st.session_state["proj_edit_id"] = p["id"]
                         st.rerun()
-                with c2:
+                with c3:
                     if st.button("📋", key=f"pdup_{p['id']}", use_container_width=True, help="Duplicar"):
                         _duplicate_project(p, proyectos, tareas)
                         st.rerun()
-                with c3:
+                with c4:
                     if confirm_delete(p["id"], p["nombre"], "proj"):
                         soft_delete(p, "proyecto", p["nombre"])
                         cascade_delete_project(p["id"])
