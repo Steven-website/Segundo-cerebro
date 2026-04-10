@@ -70,20 +70,20 @@ def render():
     proyectos = get_df("proyectos")
     tareas = get_df("tareas")
 
+    # --- Check if viewing task detail (must be before project check) ---
+    viewing_task = st.session_state.get("task_detail_id")
+    if viewing_task and not tareas.empty:
+        matches = tareas[tareas["id"] == viewing_task]
+        if not matches.empty:
+            _render_task_detail(matches.iloc[0], tareas, proyectos)
+            return
+
     # --- Check if viewing a project detail ---
     viewing_proj = st.session_state.get("proj_viewing")
     if viewing_proj and not proyectos.empty:
         matches = proyectos[proyectos["id"] == viewing_proj]
         if not matches.empty:
             _render_project_detail(matches.iloc[0], proyectos, tareas)
-            return
-
-    # --- Check if viewing task detail ---
-    viewing_task = st.session_state.get("task_detail_id")
-    if viewing_task and not tareas.empty:
-        matches = tareas[tareas["id"] == viewing_task]
-        if not matches.empty:
-            _render_task_detail(matches.iloc[0], tareas, proyectos)
             return
 
     # --- Toolbar ---
