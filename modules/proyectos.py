@@ -250,51 +250,56 @@ def _render_projects_list(proyectos, tareas):
         st.info("No hay proyectos en esta categoria.")
         return
 
-    for _, p in filtered.iterrows():
-        area_label = AREA_LABELS.get(p["area"], p["area"])
-        proj_tasks = tareas[tareas["proyecto"] == p["id"]] if not tareas.empty else pd.DataFrame()
-        total_tasks = len(proj_tasks)
-        done_tasks = int(proj_tasks["done"].sum()) if total_tasks > 0 else 0
-        pct = int((done_tasks / total_tasks * 100)) if total_tasks > 0 else 0
+    rows = list(filtered.iterrows())
+    for i in range(0, len(rows), 2):
+        grid_cols = st.columns(2)
+        for j, col in enumerate(grid_cols):
+            idx = i + j
+            if idx >= len(rows):
+                break
+            _, p = rows[idx]
+            area_label = AREA_LABELS.get(p["area"], p["area"])
+            proj_tasks = tareas[tareas["proyecto"] == p["id"]] if not tareas.empty else pd.DataFrame()
+            total_tasks = len(proj_tasks)
+            done_tasks = int(proj_tasks["done"].sum()) if total_tasks > 0 else 0
+            pct = int((done_tasks / total_tasks * 100)) if total_tasks > 0 else 0
 
-        with st.container(border=True):
-            proj_emoji = p.get('emoji', '📁')
-            estado = p.get("estado", "activo") or "activo"
-            estado_label = ESTADOS.get(estado, estado)
+            with col:
+                with st.container(border=True):
+                    proj_emoji = p.get('emoji', '📁')
+                    estado = p.get("estado", "activo") or "activo"
+                    estado_label = ESTADOS.get(estado, estado)
 
-            col_info, col_progress, col_actions = st.columns([4, 2, 2])
-            with col_info:
-                # Stale badge
-                days = _days_without_progress(proj_tasks)
-                stale_tag = ""
-                if days is not None and days >= 7 and estado in ("activo", ""):
-                    stale_tag = f"  :red[⏸ {days}d sin avance]"
-                st.markdown(f"**{proj_emoji} {p['nombre']}**{stale_tag}")
-                st.caption(f"{area_label} | {estado_label} | {done_tasks}/{total_tasks} tareas")
-            with col_progress:
-                st.progress(pct / 100, text=f"{pct}%")
-            with col_actions:
-                c1, c2, c3, c4 = st.columns(4)
-                with c1:
-                    if st.button("📂", key=f"pview_{p['id']}", use_container_width=True, help="Abrir"):
-                        st.session_state["proj_viewing"] = p["id"]
-                        st.rerun()
-                with c2:
-                    if st.button("✏️", key=f"pedit_{p['id']}", use_container_width=True, help="Editar"):
-                        st.session_state["proj_editing"] = True
-                        st.session_state["proj_edit_id"] = p["id"]
-                        st.rerun()
-                with c3:
-                    if st.button("📋", key=f"pdup_{p['id']}", use_container_width=True, help="Duplicar"):
-                        _duplicate_project(p, proyectos, tareas)
-                        st.rerun()
-                with c4:
-                    if confirm_delete(p["id"], p["nombre"], "proj"):
-                        soft_delete(p, "proyecto", p["nombre"])
-                        cascade_delete_project(p["id"])
-                        proyectos = proyectos[proyectos["id"] != p["id"]]
-                        save_df("proyectos", proyectos)
-                        st.rerun()
+                    # Stale badge
+                    days = _days_without_progress(proj_tasks)
+                    stale_tag = ""
+                    if days is not None and days >= 7 and estado in ("activo", ""):
+                        stale_tag = f"  :red[⏸ {days}d]"
+                    st.markdown(f"**{proj_emoji} {p['nombre']}**{stale_tag}")
+                    st.caption(f"{area_label} | {estado_label} | {done_tasks}/{total_tasks} tareas")
+                    st.progress(pct / 100, text=f"{pct}%")
+
+                    c1, c2, c3, c4 = st.columns(4)
+                    with c1:
+                        if st.button("📂", key=f"pview_{p['id']}", use_container_width=True, help="Abrir"):
+                            st.session_state["proj_viewing"] = p["id"]
+                            st.rerun()
+                    with c2:
+                        if st.button("✏️", key=f"pedit_{p['id']}", use_container_width=True, help="Editar"):
+                            st.session_state["proj_editing"] = True
+                            st.session_state["proj_edit_id"] = p["id"]
+                            st.rerun()
+                    with c3:
+                        if st.button("📋", key=f"pdup_{p['id']}", use_container_width=True, help="Duplicar"):
+                            _duplicate_project(p, proyectos, tareas)
+                            st.rerun()
+                    with c4:
+                        if confirm_delete(p["id"], p["nombre"], "proj"):
+                            soft_delete(p, "proyecto", p["nombre"])
+                            cascade_delete_project(p["id"])
+                            proyectos = proyectos[proyectos["id"] != p["id"]]
+                            save_df("proyectos", proyectos)
+                            st.rerun()
 
 
 # ═══════════════════════════════════════════════
