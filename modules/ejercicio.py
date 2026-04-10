@@ -49,6 +49,9 @@ def render():
     streak = 0
     if not log.empty:
         check_date = today
+        # If no session today, start counting from yesterday
+        if log[log["fecha"] == today_str].empty:
+            check_date -= timedelta(days=1)
         while True:
             ds = check_date.strftime("%Y-%m-%d")
             if not log[log["fecha"] == ds].empty:
