@@ -88,10 +88,6 @@ def render():
                     # Projection
                     remaining = s["goal"] - s["current"]
                     if remaining > 0:
-                        payments = get_df("debt_payments")  # reuse for savings tracking
-                        # Estimate based on average monthly deposit
-                        all_payments = payments[payments.get("debt_id", pd.Series(dtype=str)).str.startswith("sav_")] if not payments.empty else pd.DataFrame()
-                        # Simple projection: if they save at current pace
                         if s["current"] > 0 and s.get("date"):
                             try:
                                 target = datetime.strptime(s["date"], "%Y-%m-%d")

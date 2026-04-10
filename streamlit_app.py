@@ -206,5 +206,7 @@ elif page == "🗑️ Papelera":
     from modules.papelera import render
 elif page == "👤 Perfil":
     from modules.perfil import render
+else:
+    from modules.dashboard import render
 
 render()
