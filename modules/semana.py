@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta, date
 from core.data import get_df, save_df, uid, now_ts
-from core.constants import AREAS, AREA_LABELS
+from core.constants import AREAS, AREA_LABELS, AREA_MAP
 from core.utils import mark_task_done
 
 DAYS = ["Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado", "Domingo"]
@@ -250,91 +250,85 @@ def _render_day(fecha_iso, week_blocks, all_blocks, tareas, proyectos):
         is_now = b["hora"] == current_hora
         done = bool(b["completado"])
 
-        with st.container(border=True):
-            col_time, col_info, col_move, col_actions = st.columns([1.3, 4, 2.2, 1.5])
-            with col_time:
-                if is_now:
-                    st.markdown(f"🔵 **:orange[{b['hora']}]**")
-                else:
-                    st.markdown(f"**{b['hora']}**")
-                st.caption(f"{b['duracion']} min")
-            with col_info:
-                style = "~~" if done else ""
-                title = b["titulo"] or ""
-                if b["tarea_id"] and not tareas.empty:
-                    tm = tareas[tareas["id"] == b["tarea_id"]]
-                    if not tm.empty:
-                        t = tm.iloc[0]
-                        if not title:
-                            title = t["titulo"]
-                        area_lbl = AREA_LABELS.get(t["area"], "")
-                        st.caption(area_lbl)
-                recur_icon = ""
-                if b.get("recurrente") == "semanal":
-                    recur_icon = " 🔁"
-                elif b.get("parent_id"):
-                    recur_icon = " 🔁"
-                st.markdown(f"{style}{title}{style}{recur_icon}")
-            with col_move:
-                mv1, mv2, mv3, mv4 = st.columns(4)
+        col_time, col_info, col_move, col_done, col_del = st.columns([1.4, 5, 0.7, 0.7, 0.7])
+        with col_time:
+            hora_txt = f":orange[{b['hora']}]" if is_now else b["hora"]
+            st.markdown(f"**{hora_txt}** · {b['duracion']}m")
+        with col_info:
+            style = "~~" if done else ""
+            title = b["titulo"] or ""
+            area_emoji = ""
+            if b["tarea_id"] and not tareas.empty:
+                tm = tareas[tareas["id"] == b["tarea_id"]]
+                if not tm.empty:
+                    t = tm.iloc[0]
+                    if not title:
+                        title = t["titulo"]
+                    area = AREA_MAP.get(t["area"])
+                    if area:
+                        area_emoji = area["emoji"] + " "
+            recur_icon = " 🔁" if (b.get("recurrente") == "semanal" or b.get("parent_id")) else ""
+            st.markdown(f"{area_emoji}{style}{title}{style}{recur_icon}")
+        with col_move:
+            with st.popover("⋯", use_container_width=True, help="Mover"):
+                mv1, mv2 = st.columns(2)
                 with mv1:
-                    if st.button("←", key=f"sem_mvl_{b['id']}", help="Mover dia anterior", use_container_width=True):
+                    if st.button("← dia", key=f"sem_mvl_{b['id']}", use_container_width=True):
                         cur = date.fromisoformat(b["fecha"])
                         all_blocks.loc[all_blocks["id"] == b["id"], "fecha"] = (cur - timedelta(days=1)).isoformat()
                         save_df("plan_blocks", all_blocks)
                         st.rerun()
                 with mv2:
-                    if st.button("→", key=f"sem_mvr_{b['id']}", help="Mover dia siguiente", use_container_width=True):
+                    if st.button("dia →", key=f"sem_mvr_{b['id']}", use_container_width=True):
                         cur = date.fromisoformat(b["fecha"])
                         all_blocks.loc[all_blocks["id"] == b["id"], "fecha"] = (cur + timedelta(days=1)).isoformat()
                         save_df("plan_blocks", all_blocks)
                         st.rerun()
+                mv3, mv4 = st.columns(2)
                 with mv3:
-                    if st.button("↑", key=f"sem_mvu_{b['id']}", help="Hora antes", use_container_width=True):
+                    if st.button("↑ hora", key=f"sem_mvu_{b['id']}", use_container_width=True):
                         all_blocks.loc[all_blocks["id"] == b["id"], "hora"] = _shift_hour(b["hora"], -1)
                         save_df("plan_blocks", all_blocks)
                         st.rerun()
                 with mv4:
-                    if st.button("↓", key=f"sem_mvd_{b['id']}", help="Hora despues", use_container_width=True):
+                    if st.button("↓ hora", key=f"sem_mvd_{b['id']}", use_container_width=True):
                         all_blocks.loc[all_blocks["id"] == b["id"], "hora"] = _shift_hour(b["hora"], 1)
                         save_df("plan_blocks", all_blocks)
                         st.rerun()
-            with col_actions:
-                ac1, ac2 = st.columns(2)
-                with ac1:
-                    if not done:
-                        if st.button("✅", key=f"sem_ok_{b['id']}", help="Completar", use_container_width=True):
-                            all_blocks.loc[all_blocks["id"] == b["id"], "completado"] = True
-                            if b["tarea_id"] and not tareas.empty:
-                                mark_task_done(tareas, b["tarea_id"])
-                                save_df("tareas", tareas)
-                            save_df("plan_blocks", all_blocks)
-                            st.rerun()
-                    else:
-                        if st.button("↩", key=f"sem_undo_{b['id']}", help="Desmarcar", use_container_width=True):
-                            all_blocks.loc[all_blocks["id"] == b["id"], "completado"] = False
-                            save_df("plan_blocks", all_blocks)
-                            st.rerun()
-                with ac2:
-                    if st.button("🗑️", key=f"sem_del_{b['id']}", help="Eliminar", use_container_width=True):
-                        st.session_state[f"sem_confirm_del_{b['id']}"] = True
-                        st.rerun()
+        with col_done:
+            if not done:
+                if st.button("✅", key=f"sem_ok_{b['id']}", help="Completar", use_container_width=True):
+                    all_blocks.loc[all_blocks["id"] == b["id"], "completado"] = True
+                    if b["tarea_id"] and not tareas.empty:
+                        mark_task_done(tareas, b["tarea_id"])
+                        save_df("tareas", tareas)
+                    save_df("plan_blocks", all_blocks)
+                    st.rerun()
+            else:
+                if st.button("↩", key=f"sem_undo_{b['id']}", help="Desmarcar", use_container_width=True):
+                    all_blocks.loc[all_blocks["id"] == b["id"], "completado"] = False
+                    save_df("plan_blocks", all_blocks)
+                    st.rerun()
+        with col_del:
+            if st.button("🗑", key=f"sem_del_{b['id']}", help="Eliminar", use_container_width=True):
+                st.session_state[f"sem_confirm_del_{b['id']}"] = True
+                st.rerun()
 
-            if st.session_state.get(f"sem_confirm_del_{b['id']}"):
-                is_template = b.get("recurrente") == "semanal"
-                msg = "¿Eliminar esta plantilla recurrente y todas sus copias futuras?" if is_template else "¿Eliminar este bloque?"
-                st.warning(msg)
-                col_yes, col_no = st.columns(2)
-                with col_yes:
-                    if st.button("Si, eliminar", key=f"sem_yes_{b['id']}", type="primary", use_container_width=True):
-                        if is_template:
-                            all_blocks = all_blocks[(all_blocks["id"] != b["id"]) & (all_blocks["parent_id"] != b["id"])]
-                        else:
-                            all_blocks = all_blocks[all_blocks["id"] != b["id"]]
-                        save_df("plan_blocks", all_blocks)
-                        st.session_state[f"sem_confirm_del_{b['id']}"] = False
-                        st.rerun()
-                with col_no:
-                    if st.button("Cancelar", key=f"sem_no_{b['id']}", use_container_width=True):
-                        st.session_state[f"sem_confirm_del_{b['id']}"] = False
-                        st.rerun()
+        if st.session_state.get(f"sem_confirm_del_{b['id']}"):
+            is_template = b.get("recurrente") == "semanal"
+            msg = "¿Eliminar esta plantilla recurrente y todas sus copias futuras?" if is_template else "¿Eliminar este bloque?"
+            st.warning(msg)
+            col_yes, col_no = st.columns(2)
+            with col_yes:
+                if st.button("Si, eliminar", key=f"sem_yes_{b['id']}", type="primary", use_container_width=True):
+                    if is_template:
+                        all_blocks = all_blocks[(all_blocks["id"] != b["id"]) & (all_blocks["parent_id"] != b["id"])]
+                    else:
+                        all_blocks = all_blocks[all_blocks["id"] != b["id"]]
+                    save_df("plan_blocks", all_blocks)
+                    st.session_state[f"sem_confirm_del_{b['id']}"] = False
+                    st.rerun()
+            with col_no:
+                if st.button("Cancelar", key=f"sem_no_{b['id']}", use_container_width=True):
+                    st.session_state[f"sem_confirm_del_{b['id']}"] = False
+                    st.rerun()
