@@ -228,6 +228,100 @@ def render():
                 st.session_state["sem_adding"] = False
                 st.rerun()
 
+    # --- Edit block form ---
+    edit_id = st.session_state.get("sem_editing_id")
+    if edit_id and not blocks.empty:
+        match = blocks[blocks["id"] == edit_id]
+        if not match.empty:
+            b = match.iloc[0]
+            with st.form("sem_edit_form", clear_on_submit=False):
+                st.subheader("Editar bloque")
+                try:
+                    cur_date = date.fromisoformat(b["fecha"])
+                except (ValueError, TypeError):
+                    cur_date = date.today()
+                cur_dow = cur_date.weekday()
+                e_monday = _monday_of(cur_date)
+                e_week = _week_dates(e_monday)
+                new_dow = st.selectbox(
+                    "Dia",
+                    range(7),
+                    index=cur_dow,
+                    format_func=lambda i: f"{DAYS[i]} {e_week[i].strftime('%d/%m')}",
+                )
+                c2, c3 = st.columns(2)
+                hora_idx = HOURS.index(b["hora"]) if b["hora"] in HOURS else 0
+                new_hora = c2.selectbox("Hora", HOURS, index=hora_idx)
+                dur_val = int(b["duracion"]) if b.get("duracion") else 60
+                dur_idx = DUR_OPTIONS.index(dur_val) if dur_val in DUR_OPTIONS else 3
+                new_dur = c3.selectbox("Duracion", DUR_OPTIONS, index=dur_idx,
+                                       format_func=lambda x: f"{x} min ({x/60:.1f}h)" if x >= 60 else f"{x} min")
+                new_titulo = st.text_input("Titulo", value=b.get("titulo", ""))
+                new_repetir = st.checkbox("🔁 Repetir cada semana", value=(b.get("recurrente") == "semanal"))
+
+                col_s, col_c = st.columns(2)
+                saved = col_s.form_submit_button("Guardar", type="primary")
+                cancel_e = col_c.form_submit_button("Cancelar")
+
+                if saved and new_titulo.strip():
+                    blocks.loc[blocks["id"] == edit_id, "fecha"] = e_week[new_dow].isoformat()
+                    blocks.loc[blocks["id"] == edit_id, "hora"] = new_hora
+                    blocks.loc[blocks["id"] == edit_id, "duracion"] = new_dur
+                    blocks.loc[blocks["id"] == edit_id, "titulo"] = new_titulo.strip()
+                    blocks.loc[blocks["id"] == edit_id, "recurrente"] = "semanal" if new_repetir else ""
+                    save_df("plan_blocks", blocks)
+                    st.session_state["sem_editing_id"] = None
+                    st.rerun()
+                if cancel_e:
+                    st.session_state["sem_editing_id"] = None
+                    st.rerun()
+
+    # --- Duplicate block form ---
+    dup_id = st.session_state.get("sem_dup_id")
+    if dup_id and not blocks.empty:
+        match = blocks[blocks["id"] == dup_id]
+        if not match.empty:
+            b = match.iloc[0]
+            with st.form("sem_dup_form", clear_on_submit=False):
+                st.subheader(f"Duplicar: {b['titulo']}")
+                try:
+                    cur_dow = date.fromisoformat(b["fecha"]).weekday()
+                except (ValueError, TypeError):
+                    cur_dow = 0
+                available = [i for i in range(7) if i != cur_dow]
+                dup_days = st.multiselect(
+                    "Dias destino",
+                    available,
+                    format_func=lambda i: f"{DAYS[i]} {week[i].strftime('%d/%m')}",
+                    help="Elegi los dias a los que queres duplicar este bloque (misma hora y duracion).",
+                )
+                col_s, col_c = st.columns(2)
+                dup_ok = col_s.form_submit_button("Duplicar", type="primary")
+                dup_cancel = col_c.form_submit_button("Cancelar")
+
+                if dup_ok and dup_days:
+                    new_rows = []
+                    for di in dup_days:
+                        new_rows.append({
+                            "id": uid(),
+                            "fecha": week_iso[di],
+                            "hora": b["hora"],
+                            "tarea_id": b.get("tarea_id", ""),
+                            "titulo": b["titulo"],
+                            "duracion": int(b["duracion"]) if b.get("duracion") else 60,
+                            "completado": False,
+                            "recurrente": "",
+                            "parent_id": "",
+                            "ts": now_ts(),
+                        })
+                    blocks = pd.concat([pd.DataFrame(new_rows), blocks], ignore_index=True)
+                    save_df("plan_blocks", blocks)
+                    st.session_state["sem_dup_id"] = None
+                    st.rerun()
+                if dup_cancel:
+                    st.session_state["sem_dup_id"] = None
+                    st.rerun()
+
     st.divider()
 
     # --- Day tabs ---
@@ -279,7 +373,16 @@ def _render_day(fecha_iso, week_blocks, all_blocks, tareas, proyectos):
             recur_icon = " 🔁" if (b.get("recurrente") == "semanal" or b.get("parent_id")) else ""
             st.markdown(f"{area_emoji}{style}{title}{style}{recur_icon}")
         with col_move:
-            with st.popover("⋯", use_container_width=True, help="Mover"):
+            with st.popover("⋯", use_container_width=True, help="Mas acciones"):
+                if st.button("✏️ Editar", key=f"sem_edit_{b['id']}", use_container_width=True):
+                    st.session_state["sem_editing_id"] = b["id"]
+                    st.session_state["sem_dup_id"] = None
+                    st.rerun()
+                if st.button("📋 Duplicar a otros dias", key=f"sem_dup_{b['id']}", use_container_width=True):
+                    st.session_state["sem_dup_id"] = b["id"]
+                    st.session_state["sem_editing_id"] = None
+                    st.rerun()
+                st.caption("Mover rapido:")
                 mv1, mv2 = st.columns(2)
                 with mv1:
                     if st.button("← dia", key=f"sem_mvl_{b['id']}", use_container_width=True):
