@@ -139,7 +139,7 @@ with col_logout:
 
 # Navigation pills (single selection, wraps automatically)
 NAV_OPTIONS = [
-    "◈ Dashboard", "📌 Hoy", "◉ Habitos", "◈ Proyectos", "₡ Finanzas",
+    "◈ Dashboard", "📌 Hoy", "🗓️ Semana", "◉ Habitos", "◈ Proyectos", "₡ Finanzas",
     "◎ Deudas", "🛍️ Deseos", "📖 Lectura", "🏋️ Ejercicio", "📝 Notas", "🎯 Metas",
     "📅 Calendario", "◣ Inventario", "🎤 Audios", "🍅 Pomodoro",
     "📊 Reportes", "📋 Historial", "🔍 Buscar", "💾 Backup",
@@ -168,6 +168,8 @@ if page == "◈ Dashboard":
     from modules.dashboard import render
 elif page == "📌 Hoy":
     from modules.hoy import render
+elif page == "🗓️ Semana":
+    from modules.semana import render
 elif page == "🔍 Buscar":
     from modules.buscar import render
 elif page == "📝 Notas":

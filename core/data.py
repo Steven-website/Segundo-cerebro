@@ -26,7 +26,7 @@ SCHEMAS = {
     "budget": {"cat": str, "amt": float},
     "papelera": {"id": str, "tipo": str, "nombre": str, "data": str, "deleted_ts": float},
     "savings_hist": {"id": str, "saving_id": str, "monto": float, "balance": float, "fecha": str, "ts": float},
-    "plan_blocks": {"id": str, "fecha": str, "hora": str, "tarea_id": str, "titulo": str, "duracion": int, "completado": bool, "ts": float},
+    "plan_blocks": {"id": str, "fecha": str, "hora": str, "tarea_id": str, "titulo": str, "duracion": int, "completado": bool, "recurrente": str, "parent_id": str, "ts": float},
     "notas_rapidas": {"id": str, "texto": str, "fecha": str, "ts": float},
     "metas_hist": {"id": str, "meta_id": str, "progreso": float, "fecha": str, "ts": float},
     "wishlist_cats": {"id": str, "nombre": str, "emoji": str, "orden": int, "ts": float},
