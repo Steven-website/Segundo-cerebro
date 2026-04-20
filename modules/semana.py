@@ -167,8 +167,15 @@ def render():
     if st.session_state.get("sem_adding"):
         with st.form("sem_add_form", clear_on_submit=True):
             st.subheader("Nuevo bloque")
-            c1, c2, c3 = st.columns(3)
-            day_idx = c1.selectbox("Dia", range(7), format_func=lambda i: f"{DAYS[i]} {week[i].strftime('%d/%m')}")
+            today_dow = date.today().weekday() if date.today().isoformat() in week_iso else 0
+            day_idxs = st.multiselect(
+                "Dias (elegi uno o varios)",
+                range(7),
+                default=[today_dow],
+                format_func=lambda i: f"{DAYS[i]} {week[i].strftime('%d/%m')}",
+                help="Seleccioná varios dias para crear el mismo bloque en cada uno.",
+            )
+            c2, c3 = st.columns(2)
             hora = c2.selectbox("Hora", HOURS, index=2)
             duracion = c3.selectbox("Duracion", DUR_OPTIONS, index=3,
                                     format_func=lambda x: f"{x} min ({x/60:.1f}h)" if x >= 60 else f"{x} min")
@@ -198,20 +205,22 @@ def render():
 
             if submitted:
                 block_titulo = titulo.strip() if task_sel == 0 else task_options[task_sel]
-                if block_titulo or task_ids[task_sel]:
-                    new_block = {
-                        "id": uid(),
-                        "fecha": week_iso[day_idx],
-                        "hora": hora,
-                        "tarea_id": task_ids[task_sel],
-                        "titulo": block_titulo,
-                        "duracion": duracion,
-                        "completado": False,
-                        "recurrente": "semanal" if repetir else "",
-                        "parent_id": "",
-                        "ts": now_ts(),
-                    }
-                    blocks = pd.concat([pd.DataFrame([new_block]), blocks], ignore_index=True)
+                if (block_titulo or task_ids[task_sel]) and day_idxs:
+                    new_rows = []
+                    for di in day_idxs:
+                        new_rows.append({
+                            "id": uid(),
+                            "fecha": week_iso[di],
+                            "hora": hora,
+                            "tarea_id": task_ids[task_sel],
+                            "titulo": block_titulo,
+                            "duracion": duracion,
+                            "completado": False,
+                            "recurrente": "semanal" if repetir else "",
+                            "parent_id": "",
+                            "ts": now_ts(),
+                        })
+                    blocks = pd.concat([pd.DataFrame(new_rows), blocks], ignore_index=True)
                     save_df("plan_blocks", blocks)
                 st.session_state["sem_adding"] = False
                 st.rerun()
